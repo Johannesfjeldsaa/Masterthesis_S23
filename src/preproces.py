@@ -172,7 +172,27 @@ class Preprocess_Climate_Data:
 
         return dataset
     
-    def apply_mask(self, mask_name, path_to_mask=None):
+    def check_mask_compatability(self, xr_file, var_name, mask):
+        if np.array_equal(xr_file[var_name].lat, mask.lat):
+            lat_compatabiliy = True
+        else:
+            lat_compatabiliy = False
+        
+        if np.array_equal(xr_file[var_name].lon, mask.lon):
+            lon_compatability = True
+        else:
+            lon_compatability = False
+        
+        if lat_compatabiliy and lon_compatability:
+            return True 
+        else: 
+            raise ValueError(f'Mask is not compatible with xr_file\n'
+                             f'lat compatibility: {lat_compatabiliy}\n'
+                             f'lon compatability: {lon_compatability}')
+
+    
+
+    def apply_mask(self, xr_file, var_name,  mask_name, path_to_mask=None):
         
         if mask_name is None:
             raise ValueError("A mask name must be provided.")
@@ -189,6 +209,10 @@ class Preprocess_Climate_Data:
         print(f"Applying mask from {mask_path}")
 
         mask = xr.open_dataset(mask_path)
+
+        if self.check_mask_compatability(xr_file, var_name, mask):
+            print('mask is compatible')
+
 
         return mask
 
