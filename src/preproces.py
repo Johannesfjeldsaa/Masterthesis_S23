@@ -174,7 +174,7 @@ class Preprocess_Climate_Data:
 
         return dataset
     
-    def check_mask_compatability(self, xr_file, var_name, mask, ):
+    def check_mask_compatability(self, xr_file, var_name, mask):
         if np.array_equal(xr_file[var_name].lat, mask.lat):
             lat_compatabiliy = True
         else:
@@ -375,7 +375,7 @@ class Preprocess_Climate_Data:
 
         return climatology_dataset
 
-    def create_spatial_climatology(self, dataset, var_name,
+    def create_spatial_climatology(self, dataset, var_name, weights=None,
                                    climatology_type="zonal",
                                    save_to_dataset=False,
                                    file_name=None,
@@ -402,30 +402,38 @@ class Preprocess_Climate_Data:
         Returns:
         - xr.Dataset: An xarray dataset with a spatial climatology.
         """
+        if weights is not None:
+            dataset_coords = dataset.coords._names
+            weight_coords = weights.coords._names
+            common_coords = weight_coords.intersection(dataset_coords)
+            for coord in common_coords:
+                if np.array_equal(weights[coord], dataset[coord]) is False:
+                    raise ValueError(f'weights not valid for this dataset. The {coord} coordinates does not match.')
+            dataset = dataset.weighted(weights)
+                   
+
         if climatology_type == "global":
-            climatology = dataset[var_name].mean(dim=["lat", "lon"])
+            climatology = dataset.mean(dim=["lat", "lon"])
         else:
             if climatology_type == "zonal":
                 key_word = "lon"
             elif climatology_type == "meridional":
                 key_word = "lat"
             else:
-                raise ValueError("Invalid climatology_type. Must be 'zonal' or 'meridional'."
-                                    "For global climatology, set global_climatology=True.")
+                raise ValueError("Invalid climatology_type. Must be 'zonal', 'meridional' or 'global'.")
 
-            climatology = dataset[var_name].mean(dim=[key_word])
+            climatology = dataset.mean(dim=[key_word])
 
-        climatology_dataset = xr.Dataset({var_name: climatology})
 
         if save_to_dataset:
-            climatology_dataset = self.save_climatology_dataset(climatology_dataset, 
+            climatology = self.save_climatology_dataset(climatology, 
                                                                 climatology_type, 
                                                                 file_name, 
                                                                 directory, 
                                                                 is_original_name, 
                                                                 re_open)
 
-        return climatology_dataset
+        return climatology
 
     def create_spatial_temporal_climatology(self, dataset, var_name,
                                             spatial_climatology_type="zonal",

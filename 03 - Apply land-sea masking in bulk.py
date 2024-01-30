@@ -6,11 +6,12 @@ from src.preproces import *
 
 #%% Setup
 work_dir = '/nird/home/johannef/Masterthesis_S23'
+var = 'pr'
 
 file_handler = Handle_Files(work_dir)
 preprocesser = Preprocess_Climate_Data(work_dir)
 
-data_path = '/nird/home/johannef/Masterthesis_S23 DataFiles/Annualclimatologies/rx5dayETCCDI'
+data_path = '/nird/home/johannef/Masterthesis_S23 DataFiles/Annualclimatologies/' + var
 
 sorted_files = {'ssp126': file_handler.get_all_filenames_in_dir('/'.join([data_path, 'ssp126'])),
                 'ssp370': file_handler.get_all_filenames_in_dir('/'.join([data_path, 'ssp370'])),
@@ -28,7 +29,7 @@ test_file = file_handler.read_netcdf_to_xr('/'.join([data_path,
                                                      'ssp126', 
                                                      sorted_files['ssp126'][0]]))
 
-land_sea_mask['lon'] = test_file.rx5dayETCCDI.lon
+land_sea_mask['lon'] = test_file[var].lon
 land_sea_mask = land_sea_mask.rename({'time': 'year'})
 
 land_sea_mask_w_ts = land_sea_mask.reindex_like(test_file)
@@ -44,15 +45,15 @@ sea_mask = land_sea_mask_w_ts.where(land_sea_mask_w_ts <= 0.2).notnull()
 
 
 # rechek compatability, save if it is compatible
-if preprocesser.check_mask_compatability(test_file, 'rx5dayETCCDI', land_mask) and preprocesser.check_mask_compatability(test_file, 'rx5dayETCCDI', sea_mask):
+if preprocesser.check_mask_compatability(test_file, var, land_mask) and preprocesser.check_mask_compatability(test_file, var, sea_mask):
     print('Mask is compatible with files')
 
     
 #%% Apply mask 
 for scenario in sorted_files.keys():
     file_names = sorted_files[scenario]
-    save_path_landmasked = work_dir + ' DataFiles/land_masked_annual_climatalogies/' + 'rx5dayETCCDI' + '/' + scenario + '/'
-    save_path_seamasked = work_dir + ' DataFiles/sea_masked_annual_climatalogies/' + 'rx5dayETCCDI' + '/' + scenario + '/'
+    save_path_landmasked = work_dir + ' DataFiles/land_masked_annual_climatalogies/' + var + '/' + scenario + '/'
+    save_path_seamasked = work_dir + ' DataFiles/sea_masked_annual_climatalogies/' + var + '/' + scenario + '/'
     for file_name in file_names:
         ds = file_handler.read_netcdf_to_xr(directory='/'.join([data_path, scenario]), 
                                             file_name=file_name)
