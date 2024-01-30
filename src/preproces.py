@@ -69,24 +69,26 @@ class Handle_Files:
                 return None
         return xr.open_dataset(file_path)
 
-    def get_all_filenames_in_dir(self, directory, condition=None):
+    def get_all_filenames_in_dir(self, directory, condition=None, substrings=None):
         """
         Get all the filenames in a directory that satisfy a condition.
 
         Parameters:
         - directory (str): Path to the directory where the files are located.
-        - condition (function): A function that takes a filename as input and
-        returns a boolean value indicating whether the filename satisfies the
-        condition.
+        - substrings (list): A list of substrings that ough to be in filename
 
         Returns:
         - list: A list of filenames that satisfy the condition.
         """
         filenames = os.listdir(directory)
-        if condition is None:
-            return filenames
-        else:
-            return [filename for filename in filenames if condition(filename)]
+        
+        if substrings is not None:
+            filenames =  [f for f in filenames if all(c in f for c in substrings)]
+        if condition is not None:
+            filenames =  [filename for filename in filenames if condition(filename)]
+            
+        return filenames
+                
 
     def get_all_netcdf_files_in_dir(self, directory):
         """
@@ -172,7 +174,7 @@ class Preprocess_Climate_Data:
 
         return dataset
     
-    def check_mask_compatability(self, xr_file, var_name, mask):
+    def check_mask_compatability(self, xr_file, var_name, mask, ):
         if np.array_equal(xr_file[var_name].lat, mask.lat):
             lat_compatabiliy = True
         else:
@@ -183,12 +185,18 @@ class Preprocess_Climate_Data:
         else:
             lon_compatability = False
         
-        if lat_compatabiliy and lon_compatability:
+        if np.array_equal(xr_file[var_name].year, mask.year):
+            time_compatability = True
+        else:
+            time_compatability = False
+        
+        if lat_compatabiliy and lon_compatability and time_compatability:
             return True 
         else: 
             raise ValueError(f'Mask is not compatible with xr_file\n'
                              f'lat compatibility: {lat_compatabiliy}\n'
-                             f'lon compatability: {lon_compatability}')
+                             f'lon compatability: {lon_compatability}\n'
+                             f'time compatability: {time_compatability}')
 
     
 
