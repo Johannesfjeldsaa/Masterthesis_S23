@@ -10,6 +10,7 @@ Import resources:
 
 import os
 import datetime
+import time
 
 import xarray as xr
 import matplotlib.pyplot as plt
@@ -174,7 +175,7 @@ class Preprocess_Climate_Data:
 
         return dataset
     
-    def check_mask_compatability(self, xr_file, var_name, mask):
+    def check_mask_compatability(self, xr_file, var_name, mask, time_dim_name='year'):
         if np.array_equal(xr_file[var_name].lat, mask.lat):
             lat_compatabiliy = True
         else:
@@ -185,7 +186,7 @@ class Preprocess_Climate_Data:
         else:
             lon_compatability = False
         
-        if np.array_equal(xr_file[var_name].year, mask.year):
+        if np.array_equal(xr_file[var_name][time_dim_name], mask[time_dim_name]):
             time_compatability = True
         else:
             time_compatability = False
