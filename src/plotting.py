@@ -3,6 +3,7 @@
 '''
 import cmocean
 import matplotlib.pyplot as plt 
+import seaborn as sns
 import xarray as xr 
 import cartopy.crs as ccrs 
 import regionmask
@@ -326,3 +327,46 @@ def disp_external_fig(path_to_image, wanted_height=None, wanted_width=None):
     plt.imshow(img)
     plt.axis('off')  # to turn off the axis labels
     plt.show()
+
+def plot_cumulative_mRMR_scores(mRMR_scores_df, period=None):
+    def autolabel(rects, ranks):
+        max_height = np.max([rect.get_height() for rect in rects])
+        for rect, rank in zip(rects, ranks):
+            height = rect.get_height()
+            if height <= 0.25*max_height and height > 0.1*max_height:
+                y = .5*height
+            elif height <= 0.1*max_height:
+                y = .2*height
+            else:
+                y = .8*height
+
+            ax.text(rect.get_x() + rect.get_width() / 2., y,
+                    rank,
+                    ha='center', va='bottom', rotation=90, color='white')
+    
+    if period is not None:
+        mRMR_scores_for_plotting = mRMR_scores_df[(mRMR_scores_df['year'] >= period[0]) & (mRMR_scores_df['year'] <= period[1])]
+    else:
+        mRMR_scores_for_plotting = mRMR_scores_df
+    mRMR_scores_for_plotting = mRMR_scores_for_plotting.drop('year', axis=1).sum().reset_index()
+    mRMR_scores_for_plotting.columns = ['var: mask', 'cumulative_mRMR_score']
+    mRMR_scores_for_plotting['rank'] = mRMR_scores_for_plotting['cumulative_mRMR_score'].rank(ascending=False)
+    mRMR_scores_for_plotting['rank'] = mRMR_scores_for_plotting['rank'].astype(int)
+
+    # Plot the sum as a barplot with rank
+    fig, ax = plt.subplots(figsize=(12, 8))  # Increase the figure size
+    if period is not None:
+        start_year = period[0]
+        stop_year = period[1]
+    else:
+        start_year = mRMR_scores_df['year'].iloc[0]
+        stop_year = mRMR_scores_df['year'].iloc[-1]
+    
+    fig.suptitle(f'Cumulative mRMR-scores for {start_year}-{stop_year}')
+    sns.barplot(x=mRMR_scores_for_plotting['var: mask'], y=mRMR_scores_for_plotting['cumulative_mRMR_score'], label=f'{start_year}-{stop_year}')
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha='left')  # Rotate labels 90 degrees to the left
+    ax.set_ylabel('Cumulative mRMR score for var: mask')
+    autolabel(ax.patches, mRMR_scores_for_plotting['rank'])
+    plt.legend()
+    plt.show()
+        
