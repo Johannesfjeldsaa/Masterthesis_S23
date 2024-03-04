@@ -11,10 +11,11 @@ from src.preproces import *
 from xclim import ensembles
 import math
 from pathlib import Path
+import imageio.v2 as imageio
 
 
 
-file_handler = Handle_Files(working_dir='/nird/home/johannef/Masterthesis_S23 DataFiles')
+file_handler = Handle_Files(working_dir='/nird/home/johannef/Masterthesis_S23')
 
 
 def plot_on_map(data, ax=None,
@@ -328,22 +329,28 @@ def disp_external_fig(path_to_image, wanted_height=None, wanted_width=None):
     plt.axis('off')  # to turn off the axis labels
     plt.show()
 
-def plot_cumulative_mRMR_scores(mRMR_scores_df, period=None):
-    def autolabel(rects, ranks):
+def autolabel(ax, ranks):
+        rects = ax.patches
         max_height = np.max([rect.get_height() for rect in rects])
         for rect, rank in zip(rects, ranks):
+            rotation = 90
             height = rect.get_height()
             if height <= 0.25*max_height and height > 0.1*max_height:
                 y = .5*height
-            elif height <= 0.1*max_height:
+            elif height <= 0.1*max_height and height > 0.05*max_height:
                 y = .2*height
+            elif height < 0.05*max_height:
+                y = .8*height
+                rotation = 0
             else:
                 y = .8*height
 
             ax.text(rect.get_x() + rect.get_width() / 2., y,
                     rank,
-                    ha='center', va='bottom', rotation=90, color='white')
-    
+                    ha='center', va='bottom', rotation=rotation, color='black')
+
+def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, period=None, save=False, save_folder=None, save_name=None):
+        
     if period is not None:
         mRMR_scores_for_plotting = mRMR_scores_df[(mRMR_scores_df['year'] >= period[0]) & (mRMR_scores_df['year'] <= period[1])]
     else:
@@ -352,6 +359,7 @@ def plot_cumulative_mRMR_scores(mRMR_scores_df, period=None):
     mRMR_scores_for_plotting.columns = ['var: mask', 'cumulative_mRMR_score']
     mRMR_scores_for_plotting['rank'] = mRMR_scores_for_plotting['cumulative_mRMR_score'].rank(ascending=False)
     mRMR_scores_for_plotting['rank'] = mRMR_scores_for_plotting['rank'].astype(int)
+    mRMR_scores_for_plotting['var'] = mRMR_scores_for_plotting['var: mask'].str.split(':').str[0]
 
     # Plot the sum as a barplot with rank
     fig, ax = plt.subplots(figsize=(12, 8))  # Increase the figure size
@@ -362,11 +370,74 @@ def plot_cumulative_mRMR_scores(mRMR_scores_df, period=None):
         start_year = mRMR_scores_df['year'].iloc[0]
         stop_year = mRMR_scores_df['year'].iloc[-1]
     
-    fig.suptitle(f'Cumulative mRMR-scores for {start_year}-{stop_year}')
-    sns.barplot(x=mRMR_scores_for_plotting['var: mask'], y=mRMR_scores_for_plotting['cumulative_mRMR_score'], label=f'{start_year}-{stop_year}')
+    title = title if title is not None else f'Cumulative {filter_name}-scores {start_year}-{stop_year}'
+    fig.suptitle(title, fontsize=20)
+    sns.barplot(x=mRMR_scores_for_plotting['var: mask'], y=mRMR_scores_for_plotting['cumulative_mRMR_score'], 
+                hue=mRMR_scores_for_plotting['var'])
     ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha='left')  # Rotate labels 90 degrees to the left
     ax.set_ylabel('Cumulative mRMR score for var: mask')
-    autolabel(ax.patches, mRMR_scores_for_plotting['rank'])
-    plt.legend()
+    autolabel(ax, mRMR_scores_for_plotting['rank'])
+    plt.legend(loc='upper left')
+    plt.tight_layout()
+
+    save_folder = save_folder if save_folder is not None else '/nird/home/johannef/Masterthesis_S23 Results/FigureFiles/Feature selection'
+    save_name = save_name if save_name is not None else f'cumulative_{filter_name}_scores_{start_year}to{stop_year}.png'
+    if save:
+        if not os.path.exists(save_folder):
+            os.makedirs(save_folder)
+        plt.savefig(f'{save_folder}/{save_name}')
+    
     plt.show()
+
+def add_note_at_bottom(fig, note):
+    fig.text(0.5, 0.02, note, ha='center', fontsize=12)
+
+def animate_scores_barplot(scores_df, title=None, filter_name=None, save_folder=None, save_name=None, supress_counter=False):
+
+    save_folder = save_folder if save_folder is not None else '/nird/home/johannef/Masterthesis_S23 Results/FigureFiles/Feature selection/animations'
+    given_title = title
+    png_files = []
+    
+    for year in scores_df['year']:
+        scores_for_plotting = scores_df[(scores_df['year'] >= 2015) & (scores_df['year'] <= year)]
+        scores_for_plotting = scores_for_plotting.drop('year', axis=1).sum().reset_index()
+        scores_for_plotting.columns = ['var: mask', 'cumulative_score']
+        scores_for_plotting['rank'] = scores_for_plotting['cumulative_score'].rank(ascending=False)
+        scores_for_plotting['rank'] = scores_for_plotting['rank'].astype(int)
+        scores_for_plotting['var'] = scores_for_plotting['var: mask'].str.split(':').str[0]
         
+        fig, ax = plt.subplots(figsize=(12, 10))
+        if supress_counter:
+            title = given_title if given_title is not None else f'Cumulative {filter_name}-scores'
+        else:
+            title = f'{given_title} {year}:{scores_df["year"].iloc[-1]}' if given_title is not None else f'Cumulative {filter_name}-scores {year}:{scores_df["year"].iloc[-1]}'
+
+        fig.suptitle(title, fontsize=20)
+
+        sns.barplot(x=scores_for_plotting['var: mask'], y=scores_for_plotting['cumulative_score'], 
+                    hue=scores_for_plotting['var'])
+        ax.set_xticks(ax.get_xticks())
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha='left')  # Rotate labels 90 degrees to the left
+        plt.gca().set_xlabel(None)
+        ax.set_ylabel('Cumulative score for var: mask')
+        autolabel(ax, scores_for_plotting['rank'])
+        plt.legend(loc='upper left')
+        plt.tight_layout()
+        
+        # saving 
+        file_name = f'fig_{year}.png'
+        png_files.append(file_name)
+        if f'raw_imgs_{filter_name}' not in os.listdir(save_folder):
+            os.makedirs('/'.join([save_folder, f'raw_imgs_{filter_name}']))
+        plt.savefig('/'.join([save_folder, f'raw_imgs_{filter_name}', file_name]))
+        plt.close()
+
+    # create gif
+    save_name = save_name if save_name is not None else f'{filter_name}_scores_animation.gif'
+    with imageio.get_writer('/'.join([save_folder, save_name]), mode='i', fps=2) as writer:
+        for file_name in png_files:
+            image = imageio.imread('/'.join([save_folder, f'raw_imgs_{filter_name}', file_name]))
+            writer.append_data(image)
+            os.remove('/'.join([save_folder, f'raw_imgs_{filter_name}', file_name]))
+    
+    os.removedirs('/'.join([save_folder, f'raw_imgs_{filter_name}']))
