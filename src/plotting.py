@@ -117,7 +117,7 @@ def plot_annual_global_ensambles(main_data_dir, SSPs, variable, mask_names=None,
 
     fig, axs = plt.subplots(num_rows, num_cols, figsize=(5*num_cols, 4*num_rows))#, sharex='col')
     axs = axs.flatten()
-    fig2, axs2 = plt.subplots(num_rows, num_cols, figsize=(5*num_cols, 4*num_rows))#, sharex='col')
+    fig2, axs2 = plt.subplots(num_rows, num_cols, figsize=(5*num_cols, 4*num_rows), sharey=True)
     axs2 = axs2.flatten()
 
     fig.suptitle('SSP development')
