@@ -7,7 +7,14 @@ set -euf -o pipefail
 module load Anaconda3/2022.05
 
 my_conda_storage=/nird/home/johannef/.conda
+new_env_name=msc_env2
+yml_file=environment.yml
 
+# Remove the existing prefix directory if it exists
+if [ -d "$my_conda_storage/$new_env_name" ]; then
+    echo "Removing existing Conda environment $new_env_name directory..."
+    rm -rf $my_conda_storage/$new_env_name
+fi
 
 export CONDA_PKGS_DIRS=${my_conda_storage}/package-cache
-conda env create --prefix ${my_conda_storage}/msc_env --file msc_env.yml
+conda env create --prefix ${my_conda_storage}/${new_env_name} --file ${yml_file}

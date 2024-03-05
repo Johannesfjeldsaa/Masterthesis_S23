@@ -106,7 +106,7 @@ def legend_without_duplicate_labels(fig):
     unique = [(h, l) for i, (h, l) in enumerate(zip(handles, labels)) if l not in labels[:i]]
     fig.legend(*zip(*unique), loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
 
-def plot_annual_global_ensambles(main_data_dir, SSPs, variable, mask_names=None, temporal_range=None):
+def plot_annual_global_ensambles(main_data_dir, SSPs, variable, mask_names=None, temporal_range=None, show_fig2=True):
 
     if mask_names is None:
         mask_names = file_handler.get_all_filenames_in_dir(main_data_dir)
@@ -115,26 +115,19 @@ def plot_annual_global_ensambles(main_data_dir, SSPs, variable, mask_names=None,
     num_cols = 3
     num_rows = math.ceil(num_masks / num_cols)
 
-    fig, axs = plt.subplots(num_rows, num_cols, figsize=(5*num_cols, 4*num_rows))#, sharex='col')
+    fig, axs = plt.subplots(num_rows, num_cols, figsize=(5*num_cols, 4*num_rows))
     axs = axs.flatten()
-    fig2, axs2 = plt.subplots(num_rows, num_cols, figsize=(5*num_cols, 4*num_rows))#, sharex='col')
-    axs2 = axs2.flatten()
-
+    
     fig.suptitle('SSP development')
-    fig2.suptitle('SSP development (Meanscaled)')
-
 
     colors = plt.cm.coolwarm(np.linspace(0, 1, len(SSPs)))
     color_map = dict(zip(SSPs, colors))
 
     for i, mask in enumerate(mask_names):
         ax = axs[i]
-        ax2 = axs2[i]
-
+        ax.grid(True)
         ax.set_ylabel(variable)
         ax.set_title(f'{variable} ({mask})')
-        ax2.set_ylabel(variable)
-        ax2.set_title(f'{variable} ({mask})')
 
         means = {}
         stds = {}
@@ -161,25 +154,33 @@ def plot_annual_global_ensambles(main_data_dir, SSPs, variable, mask_names=None,
             means[scenario] = ens_mean
             stds[scenario] = ens_std
         
-        subfig_mean = [scenario_mean.mean().values.item() for scenario_mean in means.values()]
-        subfig_mean = np.mean(subfig_mean)
+        if show_fig2:
+            fig2, axs2 = plt.subplots(num_rows, num_cols, figsize=(5*num_cols, 4*num_rows))
+            axs2 = axs2.flatten()
+            fig2.suptitle('SSP development (Meanscaled)')
 
-        for scenario in means.keys(): 
-            # meanscaled version
-            # Kan ikke skalere med gruppegjennomsnittet må benytte gjennomsnittet av alle sspene
-            meanscaled_ens_mean = means[scenario] - subfig_mean
-            ax2.fill_between(ens_stats.year, meanscaled_ens_mean - stds[scenario], meanscaled_ens_mean + stds[scenario], 
-                                    color=color_map[scenario],
-                                    alpha=0.5)
-            ax2.plot(ens_stats.year, meanscaled_ens_mean, 
-                            label=scenario,
-                            color=color_map[scenario])
-            
+            for scenario in means.keys(): 
+                subfig_mean = [scenario_mean.mean().values.item() for scenario_mean in means.values()]
+                subfig_mean = np.mean(subfig_mean)
+
+                # meanscaled version
+                # Kan ikke skalere med gruppegjennomsnittet må benytte gjennomsnittet av alle sspene
+                meanscaled_ens_mean = means[scenario] - subfig_mean
+                axs2.fill_between(ens_stats.year, meanscaled_ens_mean - stds[scenario], meanscaled_ens_mean + stds[scenario], 
+                                        color=color_map[scenario],
+                                        alpha=0.5)
+                axs2.plot(ens_stats.year, meanscaled_ens_mean, 
+                                label=scenario,
+                                color=color_map[scenario])
+
+            legend_without_duplicate_labels(fig2)
+            plt.tight_layout()
+            plt.show()
 
     legend_without_duplicate_labels(fig)
-    legend_without_duplicate_labels(fig2)
     plt.tight_layout()
     plt.show()
+
 
 def exctract_data_for_mapplots_for_investigation(ensambles, var, years, SSPs):
 
@@ -412,7 +413,7 @@ def animate_scores_barplot(scores_df, title=None, filter_name=None, save_folder=
         else:
             title = f'{given_title} {year}:{scores_df["year"].iloc[-1]}' if given_title is not None else f'Cumulative {filter_name}-scores {year}:{scores_df["year"].iloc[-1]}'
 
-        fig.suptitle(title, fontsize=20)
+        fig.suptitle(title, fontsize=16)
 
         sns.barplot(x=scores_for_plotting['var: mask'], y=scores_for_plotting['cumulative_score'], 
                     hue=scores_for_plotting['var'])
