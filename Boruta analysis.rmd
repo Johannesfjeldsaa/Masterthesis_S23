@@ -39,9 +39,7 @@ for (year in years) {
 boruta_dataframes = list()
 indx = 0
 for (year in years) {
-  if (year%%5==0) {
-    print(year)
-  }
+
   cross_section_df <- scaled_cross_sections[[year]]
   
   
@@ -51,9 +49,9 @@ for (year in years) {
   boruta.df <- boruta.df[order(as.vector(rownames(boruta.df))), ]
   boruta_dataframes[[year]] <- boruta.df
   
-  if (year == 2040) {
+  if (year%%5==0) {
     par(mar = c(12, 4, 4, 1) + 1.5)  # Adjust the margin to make room for tick labels
-    plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance in cross section 2040")  # plot variable importance
+    plot(boruta_output, cex.axis=.7, las=2, xlab="", main=paste("Variable Importance in cross section ", year))  # plot variable importance
   }
 }
 ```
