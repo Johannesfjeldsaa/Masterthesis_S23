@@ -1,0 +1,95 @@
+---
+title: "Boruta feature selection"
+author: "Johannes Fjeldså"
+date: "2024-03-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Boruta)
+library(dplyr)
+library(randomForest)
+library(purrr)
+library(progress)
+library(DT)
+library(abind)
+```
+
+```{r}
+scenario_indx_key <- list('ssp126' = 0, 'ssp585' = 1)
+years <- seq(2015, 2100, 1)
+cross_section_table_dir <- "C:/Users/fjejo/Downloads/standardscaled"
+scaled_cross_sections <- list()
+for (year in years) {
+   file_path <- file.path(cross_section_table_dir, paste0("cross_section_", year, "_standscaled.csv"))
+   df <- read.csv(file_path)
+   df <- df %>%
+         filter(scenario %in% names(scenario_indx_key)) 
+   matches <- match(df$scenario, names(scenario_indx_key))
+   df$scenario_indx_key <- unlist(scenario_indx_key)[matches]
+   scaled_cross_sections[[year]] <- df
+}
+```
+
+```{r, fig.width=10, fig.height=8}
+boruta_dataframes = list()
+indx = 0
+for (year in years) {
+  if (year%%5==0) {
+    print(year)
+  }
+  cross_section_df <- scaled_cross_sections[[year]]
+  
+  
+  boruta_output <- Boruta(scenario_indx_key ~ .-scenario, data = cross_section_df, doTrace = 0, verbose = FALSE)  
+  final.boruta <- TentativeRoughFix(boruta_output)
+  boruta.df <- as.data.frame(attStats(final.boruta))
+  boruta.df <- boruta.df[order(as.vector(rownames(boruta.df))), ]
+  boruta_dataframes[[year]] <- boruta.df
+  
+  if (year == 2040) {
+    par(mar = c(12, 4, 4, 1) + 1.5)  # Adjust the margin to make room for tick labels
+    plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance in cross section 2040")  # plot variable importance
+  }
+}
+```
+```{r}
+new_colnames <- rownames(boruta_dataframes[[2015]])
+new_colnames <- c('year', new_colnames)
+boruta_scores_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
+colnames(boruta_scores_df) <- new_colnames
+
+i=1
+for (year in years) {
+   importance <- boruta_dataframes[[year]]$medianImp
+   importance <- c(year, importance)
+   boruta_scores_df[i, ] <- importance
+   i = i + 1
+}
+
+write.csv(boruta_scores_df, "C:/Users/fjejo/Downloads/boruta_scores_df.csv")
+```
+
+```{r}
+new_colnames <- rownames(boruta_dataframes[[2015]])
+new_colnames <- c('year', new_colnames)
+boruta_decisions_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
+colnames(boruta_decisions_df) <- new_colnames
+i=1
+for (year in years) {
+   decision <- boruta_dataframes[[year]]$decision
+   decision <- c(year, decision)
+   boruta_decisions_df[i, ] <- decision
+   i = i + 1
+}
+
+write.csv(boruta_decisions_df, "C:/Users/fjejo/Downloads/boruta_decisions_df.csv")
+```
+
+
+
+
