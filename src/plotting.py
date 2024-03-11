@@ -442,3 +442,34 @@ def animate_scores_barplot(scores_df, title=None, filter_name=None, save_folder=
             os.remove('/'.join([save_folder, f'raw_imgs_{filter_name}', file_name]))
     
     os.removedirs('/'.join([save_folder, f'raw_imgs_{filter_name}']))
+
+
+def plot_cm(y_test, y_pred, cm_title, best_parameters):
+    
+    fig, ax = plt.subplots()
+    f1_score = sklearn.metrics.f1_score(y_test, y_pred)
+    accuracy = sklearn.metrics.accuracy_score(y_test, y_pred)
+
+    cm = confusion_matrix(y_test, y_pred)
+    cmap = plt.get_cmap('viridis')
+    norm = plt.Normalize(vmin=0, vmax=14)
+    sns.heatmap(cm, ax=ax, cmap=cmap, norm=norm, annot=True, fmt='d')
+
+    ax.set_xticklabels([rev_target_mapping[tick] for tick in [0, 1]])
+    ax.set_yticklabels([rev_target_mapping[tick] for tick in [0, 1]])
+
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.title(cm_title)
+
+
+    plt.text(1, 2.4, 
+            f'F1 Score: {f1_score:.2f},      Accuracy: {accuracy:.2f}', 
+            fontsize=12, ha='center')
+    plt.text(1, 2.6,
+            f'Best parameters: {best_parameters}',
+            fontsize=12, ha='center')
+    
+    plt.show()
+
+    return fig
