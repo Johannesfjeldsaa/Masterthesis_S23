@@ -1,5 +1,5 @@
 ---
-title: "Boruta feature selection"
+title: "Boruta feature selection for treebased methods"
 author: "Johannes Fjeldså"
 date: "2024-03-05"
 output: html_document
@@ -14,80 +14,381 @@ library(Boruta)
 library(dplyr)
 library(randomForest)
 library(purrr)
-library(progress)
-library(DT)
-library(abind)
+library(doParallel)
+library(caret)
+library(xgboost)
 ```
 
 ```{r}
 scenario_indx_key <- list('ssp126' = 0, 'ssp585' = 1)
-years <- seq(2015, 2100, 1)
-cross_section_table_dir <- "C:/Users/fjejo/Downloads/standardscaled"
+years <- seq(2015, 2060, 5)
+#years <- seq(2035, 2040, 1)
+
+cross_section_table_dir <- "D:/Programmering/msc/Masterthesis_S23 DataFiles/unscaled"
 scaled_cross_sections <- list()
 for (year in years) {
-   file_path <- file.path(cross_section_table_dir, paste0("cross_section_", year, "_standscaled.csv"))
+   file_path <- file.path(cross_section_table_dir, paste0("cross_section_", year, ".csv"))#, "_standscaled.csv"))
    df <- read.csv(file_path)
    df <- df %>%
          filter(scenario %in% names(scenario_indx_key)) 
    matches <- match(df$scenario, names(scenario_indx_key))
-   df$scenario_indx_key <- unlist(scenario_indx_key)[matches]
+   df$scenario_indx <- unlist(scenario_indx_key)[matches]
    scaled_cross_sections[[year]] <- df
 }
 ```
 
+# XGB
+
+## Tune xgboost
+
+We need one for each year since the data is different for each year. We start by creating a function that makes an initial tuning with grio search. I will use the following parameters:
+
+-   nrounds: Represents the number of boosting rounds during training.
+
+-   max_depth: Controls the maximum depth of each tree in the ensemble, affecting model complexity and overfitting.
+
+-   eta: Also known as learning rate, determines the step size at each iteration.
+
+-   gamma: Governs the minimum loss reduction required to make a further partition on a leaf node.
+
+-   colsample_bytree: Specifies the fraction of columns to be subsampled when constructing each tree.
+
+-   min_child_weight: Defines the minimum sum of instance weight needed in a child node.
+
+-   subsample: Represents the fraction of observations to be sampled for each tree.
+
+The function uses cross validation to find the best parameters and returns the best model for each cross section year. Based on code from [amirali_n's Github](https://amirali-n.github.io/ExtremeGradientBoosting/).
+
+```{r}
+tune_xgb <- function(data, X_colnames, y_colname=NaN, 
+                     nrounds = NaN, 
+                     max_depth = NaN, 
+                     eta = NaN, 
+                     gamma = NaN, 
+                     colsample_bytree = NaN, 
+                     min_child_weight = NaN, 
+                     subsample = NaN) {
+  
+  # make it run faster (in parallell)
+  myCl=makeCluster(detectCores()-1)
+  registerDoParallel(myCl)
+  
+  # set up the grid parameters
+  nrounds <- ifelse(is.nan(nrounds), 100, nrounds)
+  max_depth <- ifelse(is.nan(max_depth), 5, max_depth)
+  eta <- ifelse(is.nan(eta), 0.3, eta)
+  gamma <- ifelse(is.nan(gamma), 0, gamma)
+  colsample_bytree <- ifelse(is.nan(colsample_bytree), 1, colsample_bytree)
+  min_child_weight <- ifelse(is.nan(min_child_weight), 1, min_child_weight)
+  subsample <- ifelse(is.nan(subsample), 1, subsample)
+ 
+  
+  
+  xgb_grid <- expand.grid(nrounds=nrounds,
+                          eta=eta,
+                          max_depth=max_depth,
+                          gamma=gamma,
+                          subsample = subsample,
+                          min_child_weight = min_child_weight, 
+                          colsample_bytree = colsample_bytree)
+  # Set rules for actual training
+  xgb_control <- trainControl(method = "cv",
+                              number = 3,
+                              verboseIter = TRUE,
+                              returnData = FALSE,
+                              returnResamp = "none",
+                              classProbs = TRUE,
+                              allowParallel = TRUE)
+  
+  
+  xgb_train <- train(x = data[, X_colnames],
+                     y = data[['scenario']], 
+                     trControl = xgb_control,
+                     tuneGrid = xgb_grid,
+                     method = "xgbTree")
+  
+  # close parallellcluster
+  stopCluster(myCl)
+  
+  best_params <- list("eta"=xgb_train$bestTune$eta,
+                 "max_depth"=xgb_train$bestTune$max_depth,
+                 "gamma"=xgb_train$bestTune$gamma,
+                 "min_child_weight"=xgb_train$bestTune$min_child_weight,
+                 "nthread"=4,
+                 "objective"="binary:logistic")
+  
+  xgb_crv = xgb.cv(params = best_params,
+                   data = as.matrix(data[, X_colnames]),
+                   nrounds = 500,
+                   nfold = 3,
+                   label = data[['scenario_indx']],
+                   showsd = TRUE,
+                   metrics = "auc",
+                   stratified = TRUE,
+                   verbose = FALSE,
+                   print_every_n = 1L,
+                   early_stopping_rounds = 50)
+  
+  best_params["nrounds"] <- xgb_crv$best_iteration
+  
+  return(best_params)
+}
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+features <- names(scaled_cross_sections[[2035]])[!names(scaled_cross_sections[[2035]]) %in% c('scenario', 'scenario_indx')]
+last_year = years[length(years)]
+
+xgb_models <- list()
+for (year in years) {
+  print(paste(year, 'of', last_year))
+  cross_section_df <- scaled_cross_sections[[year]]
+  best_params <- tune_xgb(cross_section_df, X_colnames=features, 
+                          nrounds=100, 
+                          max_depth=c(3, 5, 10), 
+                          eta=c(0.0001, 0.001, 0.01, 0.1, 0.3, 0.5, 0.7, 1), 
+                          gamma=0, 
+                          colsample_bytree=seq(0.5, 1, 0.1), 
+                          min_child_weight=c(1, 3, 5), 
+                          subsample=.7)
+  
+  xgb_models[[year]] <- best_params
+}
+```
+
+We now have a rough idea of what our xgboost model will look like when it is performing the actual training. We now apply the boruta alg. to every year using the corresponding xgboost model as the estimator. This will return the important features for each year assuming one uses xgboost for the classification.
+
+```{r}
+getImpXgboostNormalized <- function(x, y, nrounds = 5, verbose = 0, ...) {
+ # Call the original getImpXgboost function
+ imp_scores <- Boruta::getImpXgboost(x, y, nrounds = nrounds, verbose = verbose, ...)
+  
+ # Normalize the importance scores
+ # Here, you would implement your normalization method
+ # For demonstration, let's use min-max normalization
+ normalized_scores <- (imp_scores - min(imp_scores)) / (max(imp_scores) - min(imp_scores))
+  
+ # Return the normalized scores
+ return(normalized_scores)
+}
+```
+
+## Performe Boruta feature selection
+```{r}
+run_boruta <- function(data, model_name, model_params=NULL) {
+  
+  # Set estimator
+  if (model_name == 'RF'){
+    getImp <- getImpRfZ
+  } else if (model_name == 'XGB'){
+    getImp <- getImpXgboost#Normalized
+  } else if (model_name == 'RFe'){
+    getImp <- getImpFerns
+  } else {
+    stop('Model not recognized')
+  }
+  # Set default parameters
+  boruta_params <- list(formula = scenario_indx ~ .-scenario, 
+                        data = data, 
+                        doTrace = 0, 
+                        maxRuns = 100,
+                        getImp=getImp)
+  
+  if (!is.null(model_params)){
+    boruta_params <- c(boruta_params, model_params)
+  }
+    
+
+  boruta_output <- do.call(Boruta, boruta_params)
+                   
+  final_boruta <- TentativeRoughFix(boruta_output)
+  boruta_df <- as.data.frame(attStats(final_boruta))
+  boruta_df <- boruta_df[order(as.vector(rownames(boruta_df))), ]
+  return(list(boruta_df = boruta_df, boruta_output = boruta_output))
+}
+```
+
+```{r}
+extract_results <- function(boruta_dataframes, years) {
+  
+  new_colnames <- rownames(boruta_dataframes[[2015]])
+  new_colnames <- c('year', new_colnames)
+  boruta_scores_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
+  colnames(boruta_scores_df) <- new_colnames
+  boruta_decisions_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
+  colnames(boruta_decisions_df) <- new_colnames
+  
+  i=1
+  for (year in years) {
+    importance <- boruta_dataframes[[year]]$medianImp
+    importance <- c(year, importance)
+    boruta_scores_df[i, ] <- importance
+    decision <- boruta_dataframes[[year]]$decision
+    decision <- c(year, decision)
+    boruta_decisions_df[i, ] <- decision
+    i = i + 1
+  }
+
+write.csv(boruta_decisions_df, "C:/Users/fjejo/Downloads/boruta_decisions_df.csv")
+write.csv(boruta_scores_df, "C:/Users/fjejo/Downloads/boruta_scores_df.csv")
+
+}
+```
+
+Now we can run the full boruta alg. for every year and extract the results. 
+
+## Run Boruta with RF
+
 ```{r, fig.width=10, fig.height=8}
+
 boruta_dataframes = list()
 indx = 0
 for (year in years) {
-
+  
   cross_section_df <- scaled_cross_sections[[year]]
-  
-  
-  boruta_output <- Boruta(scenario_indx_key ~ .-scenario, data = cross_section_df, doTrace = 0, verbose = FALSE)  
-  final.boruta <- TentativeRoughFix(boruta_output)
-  boruta.df <- as.data.frame(attStats(final.boruta))
-  boruta.df <- boruta.df[order(as.vector(rownames(boruta.df))), ]
-  boruta_dataframes[[year]] <- boruta.df
+
+  boruta_results <- run_boruta(cross_section_df, 'RF')
+  boruta_dataframes[[year]] <- boruta_results$boruta_df
+  boruta_output <- boruta_results$boruta_output
   
   if (year%%5==0) {
     par(mar = c(12, 4, 4, 1) + 1.5)  # Adjust the margin to make room for tick labels
-    plot(boruta_output, cex.axis=.7, las=2, xlab="", main=paste("Variable Importance in cross section ", year))  # plot variable importance
+    plot(boruta_output, cex.axis=.7, las=2, xlab="", main=paste("Variable Importance in cross section (RF)", year))    }
+}
+
+extract_results(boruta_dataframes, years)
+```
+## Tune XGB
+
+```{r, fig.width=10, fig.height=8}
+
+boruta_dataframes = list()
+indx = 0
+for (year in years) {
+  xgb_models[[year]] -> best_params
+  cross_section_df <- scaled_cross_sections[[year]]
+
+  boruta_results <- run_boruta(cross_section_df, 'XGB', best_params)
+  boruta_dataframes[[year]] <- boruta_results$boruta_df
+  boruta_output <- boruta_results$boruta_output
+  
+  if (year%%1==0) {
+    par(mar = c(12, 4, 4, 1) + 1.5)  # Adjust the margin to make room for tick labels
+    plot(boruta_output, cex.axis=.7, las=2, xlab="", main=paste("Variable Importance in cross section (XGB)", year))    }
+}
+
+extract_results(boruta_dataframes, years)
+
+
+```
+
+
+```{r}
+library(tidymodels)
+```
+
+```{r}
+df <- scaled_cross_sections[[2040]]
+
+set.seed(3)
+gap_split <- initial_split(df, prop = 0.75)
+training_data <- training(gap_split)
+test_data <- testing(gap_split)
+
+best_params <- tune_xgb(training_data, X_colnames=features, 
+                        nrounds=100, 
+                        max_depth=c(3, 5, 10), 
+                        eta=seq(0.1, 1, 0.2), 
+                        gamma=0, 
+                        colsample_bytree=1, 
+                        min_child_weight=c(1, 3, 5), 
+                        subsample=.7)
+```
+```{r}
+library(mRMRe)
+
+df <- scaled_cross_sections[[2040]]
+mRMR_features <- mRMR(x=df[, boruta_features], y=df$scenario_indx)
+mRMR_features
+```
+
+
+
+```{r, warning=FALSE, message=FALSE}
+boruta_features =  c('fdETCCDI..nomask', 'pr..nomask', 'pr..sea_mask', 'tas..land_mask', 'tas..nomask', 'tas..sea_mask', 'txxETCCDI..nomask', 'txxETCCDI..sea_mask')
+nomask_features = c('fdETCCDI..nomask', 'gslETCCDI..nomask', 'pr..nomask', 'tas..nomask', 'txxETCCDI..nomask')
+all_features = names(scaled_cross_sections[[2030]])[!names(scaled_cross_sections[[2030]]) %in% c('scenario', 'scenario_indx')]
+mrmr_boruta_features = c('tas..sea_mask', 'tas..nomask', 'txxETCCDI..nomask', 'txxETCCDI..sea_mask', 'tas..land_mask', 'pr..nomask')
+
+maske_names = c('boruta', 'nomask', 'all', 'mRMR')
+feature_selections = c(boruta_features, nomask_features, all_features, mrmr_boruta_features)
+
+df <- scaled_cross_sections[[2040]]
+
+accuracy <- list(boruta = numeric(10), 
+                 nomask = numeric(10), 
+                 all = numeric(10), 
+                 mRMR = numeric(10))
+
+for (seed in 1:100) {
+  set.seed(seed)
+  print(seed)
+  train_indices <- createDataPartition(df[['scenario_indx']], p = 0.8, list = FALSE)
+  train_data <- df[train_indices, ]
+  test_data <- df[-train_indices, ]
+  
+  for (k in seq_along(maske_names)) {
+    name = maske_names[k]
+    feature_selection = feature_selections[k]
+    
+    dtrain <- xgb.DMatrix(data = as.matrix(train_data[, feature_selection]), label = train_data$scenario_indx)
+    model <- xgb.train(params = best_params, data = dtrain, nrounds = 100)
+    
+    dtest <- xgb.DMatrix(data = as.matrix(test_data[, feature_selection]), label = test_data$scenario_indx)
+    preds <- predict(model, dtest)
+    # Convert predictions to class labels
+    pred_class <- ifelse(preds > 0.5, "1", "0") # Assuming binary classification
+    
+    # Create a confusion matrix
+    accuracy[[name]][seed] <- confusionMatrix(table(pred_class, test_data$scenario_indx))$overall[1]
   }
 }
-```
-```{r}
-new_colnames <- rownames(boruta_dataframes[[2015]])
-new_colnames <- c('year', new_colnames)
-boruta_scores_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
-colnames(boruta_scores_df) <- new_colnames
+print(accuracy)
 
-i=1
-for (year in years) {
-   importance <- boruta_dataframes[[year]]$medianImp
-   importance <- c(year, importance)
-   boruta_scores_df[i, ] <- importance
-   i = i + 1
-}
-
-write.csv(boruta_scores_df, "C:/Users/fjejo/Downloads/boruta_scores_df.csv")
 ```
 
 ```{r}
-new_colnames <- rownames(boruta_dataframes[[2015]])
-new_colnames <- c('year', new_colnames)
-boruta_decisions_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
-colnames(boruta_decisions_df) <- new_colnames
-i=1
-for (year in years) {
-   decision <- boruta_dataframes[[year]]$decision
-   decision <- c(year, decision)
-   boruta_decisions_df[i, ] <- decision
-   i = i + 1
-}
-
-write.csv(boruta_decisions_df, "C:/Users/fjejo/Downloads/boruta_decisions_df.csv")
+print(accuracy)
+boxplot(accuracy, names = c("Boruta", "Nomask", "All", "mRMR"), ylab = "Values")
 ```
 
 
 
+
+```{r}
+tune_rf <- function(data, X_colnames, y_colname) {
+  
+  rf_grid <- expand.grid(mtry = c(2, 3, 4), 
+                         nodesize = c(1, 5, 10))
+  
+  rf_control <- trainControl(method = "cv",
+                             number = 5,
+                             verboseIter = TRUE,
+                             returnData = FALSE,
+                             returnResamp = "none",
+                             classProbs = TRUE,
+                             allowParallel = TRUE)
+  
+  rf_train <- train(x = data[, X_colnames],
+                    y = data[[y_colname]], 
+                    trControl = rf_control,
+                    tuneGrid = rf_grid,
+                    method = "rf")
+  
+  rf_model <- rf_train$bestTune
+  
+  return(rf_model)
+}
+```
 
