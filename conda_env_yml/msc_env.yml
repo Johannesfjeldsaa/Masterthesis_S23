@@ -1,4 +1,44 @@
-name: msc_env
+name: /nird/home/johannef/.conda/msc_env
 channels:
   - defaults
-prefix: /nird/home/johannef/.conda/envs/msc_env
+  - conda-forge
+dependencies:
+  - python=3.11
+# manipulation and wrangling
+  - pandas
+  - xarray
+  - cftime
+# file handling
+  - pathlib
+  - h5netcdf
+  - netcdf4
+# basic packages
+  - tqdm
+  - numpy
+  - dask
+  - scipy
+# climate
+  - xclim
+# visualization
+  - matplotlib
+  - seaborn
+  - imageio
+  - cartopy
+  - cmocean
+  - regionmask
+# Statistical analysis and ML
+  - pingouin
+  - statsmodels
+  - scikit-learn
+  - xgboost
+  - shap
+# pip packages
+  - pip
+  - pip:
+ #   - kxy
+    - BorutaShap
+    - tensorflow 
+    - keras    
+    - torch
+    - mrmr_selection
+prefix: /nird/home/johannef/.conda/msc_env

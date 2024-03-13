@@ -12,6 +12,7 @@ from xclim import ensembles
 import math
 from pathlib import Path
 import imageio.v2 as imageio
+import pandas as pd
 
 
 
@@ -350,7 +351,7 @@ def autolabel(ax, ranks):
                     rank,
                     ha='center', va='bottom', rotation=rotation, color='black')
 
-def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, period=None, save=False, save_folder=None, save_name=None):
+def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, period=None, save=False, save_folder=None, save_name=None, supress_rank_paste=False):
         
     if period is not None:
         mRMR_scores_for_plotting = mRMR_scores_df[(mRMR_scores_df['year'] >= period[0]) & (mRMR_scores_df['year'] <= period[1])]
@@ -361,7 +362,7 @@ def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, pe
     mRMR_scores_for_plotting['rank'] = mRMR_scores_for_plotting['cumulative_mRMR_score'].rank(ascending=False)
     mRMR_scores_for_plotting['rank'] = mRMR_scores_for_plotting['rank'].astype(int)
     mRMR_scores_for_plotting['var'] = mRMR_scores_for_plotting['var: mask'].str.split(':').str[0]
-
+    print(mRMR_scores_for_plotting)
     # Plot the sum as a barplot with rank
     fig, ax = plt.subplots(figsize=(12, 8))  # Increase the figure size
     if period is not None:
@@ -377,7 +378,8 @@ def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, pe
                 hue=mRMR_scores_for_plotting['var'])
     ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha='left')  # Rotate labels 90 degrees to the left
     ax.set_ylabel('Cumulative mRMR score for var: mask')
-    autolabel(ax, mRMR_scores_for_plotting['rank'])
+    if supress_rank_paste is False:
+        autolabel(ax, mRMR_scores_for_plotting['rank'])
     plt.legend(loc='upper left')
     plt.tight_layout()
 
@@ -393,14 +395,19 @@ def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, pe
 def add_note_at_bottom(fig, note):
     fig.text(0.5, 0.02, note, ha='center', fontsize=12)
 
-def animate_scores_barplot(scores_df, title=None, filter_name=None, save_folder=None, save_name=None, supress_counter=False):
+def animate_scores_barplot(scores_df, title=None, filter_name=None, save_folder=None, save_name=None, supress_counter=False, period=None):
 
     save_folder = save_folder if save_folder is not None else '/nird/home/johannef/Masterthesis_S23 Results/FigureFiles/Feature selection/animations'
     given_title = title
     png_files = []
     
+    start_year = period[0] if period is not None else np.min(scores_df['year'])
+    stop_year = period[1] if period is not None else np.max(scores_df['year'])+1
+
     for year in scores_df['year']:
-        scores_for_plotting = scores_df[(scores_df['year'] >= 2015) & (scores_df['year'] <= year)]
+        if year > stop_year:
+            break
+        scores_for_plotting = scores_df[(scores_df['year'] >= start_year) & (scores_df['year'] <= year)]
         scores_for_plotting = scores_for_plotting.drop('year', axis=1).sum().reset_index()
         scores_for_plotting.columns = ['var: mask', 'cumulative_score']
         scores_for_plotting['rank'] = scores_for_plotting['cumulative_score'].rank(ascending=False)
@@ -473,3 +480,59 @@ def plot_cm(y_test, y_pred, cm_title, best_parameters):
     plt.show()
 
     return fig
+
+def plot_performance(classification_summaries, metric):
+
+    plot_data = pd.DataFrame(columns=['Year', metric, 'feature_comb_key'])
+
+    for feature_comb_key, classification_summary in classification_summaries.items():
+        accuracy_feature_comb = []
+        year_list = []
+        for year in years:
+            if year in classification_summary.keys():
+                accuracy_feature_comb = accuracy_feature_comb + classification_summary[year][metric].tolist()
+                year_list = year_list + [year for _ in range(len(classification_summary[year][metric].tolist()))]
+        
+        feature_comp_plot_data = pd.DataFrame({'Year': year_list,
+                                               'accuracy': accuracy_feature_comb, 
+                                               'feature_comb_key': [feature_comb_key for _ in range(len(accuracy_feature_comb))]})
+        plot_data = pd.concat([plot_data, feature_comp_plot_data], ignore_index=True)
+
+
+    plt.figure(figsize=(10, 6))  # Set the figure size
+    plt.suptitle(f'{metric.capitalize()} development using Random Forest classifier')  # Add the suptitle
+    sns.lineplot(data=plot_data, x='Year', y='accuracy', errorbar='sd', hue='feature_comb_key')
+    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=3)  # Put the legend below the plot
+    plt.xticks(np.arange(min(plot_data['Year']), max(plot_data['Year'])+1, 2))  # Make x-axis tick labels integers
+    plt.show()
+
+def plot_cms(confusion_matrices, years=None, feature_comb_keys=None):
+    
+    scenario_indx_key = {'ssp126': 0, 'ssp585': 1}
+
+    included_years = years if years is not None else list(next(iter(confusion_matrices.values())).keys())
+    included_feature_combs = feature_comb_keys if feature_comb_keys is not None else list(confusion_matrices.keys())
+
+    nrows = len(included_years)
+    ncols = len(included_feature_combs)
+
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(5*ncols, 5*nrows), sharey='row')
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7]) 
+    fig.suptitle('Mean confusion matrices across seeds', fontsize=22)
+
+    for row, year in enumerate(included_years):
+        for col, feature_comb_key in enumerate(included_feature_combs):
+            ax = axs[row, col]
+            data = confusion_matrices[feature_comb_key][year]
+            data_df = pd.DataFrame(data)
+            data_str = data_df.map(lambda x: f'{x:.2f}%')            
+            sns.heatmap(data_df, annot=data_str, fmt='', cmap='Blues', ax=ax, vmax=50, vmin=0, cbar=False)
+            ax.set_title(f'{feature_comb_key} ({year})')
+    
+            # Set y-axis and x-axis labels using scenario_indx_key
+            ax.set_yticklabels([key for key, value in scenario_indx_key.items()], rotation=45)
+            ax.set_xticklabels([key for key, value in scenario_indx_key.items()], rotation=0)
+
+    
+    plt.colorbar(ax.collections[0], cax=cbar_ax, format='%.0f%%')
+    plt.show()
