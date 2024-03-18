@@ -37,6 +37,94 @@ for (year in years) {
 }
 ```
 
+
+# Performe Boruta feature selection
+```{r}
+run_boruta <- function(data, model_name, model_params=NULL) {
+  
+  # Set estimator
+  if (model_name == 'RF'){
+    getImp <- getImpRfZ
+  } else if (model_name == 'XGB'){
+    getImp <- getImpXgboost#Normalized
+  } else if (model_name == 'RFe'){
+    getImp <- getImpFerns
+  } else {
+    stop('Model not recognized')
+  }
+  # Set default parameters
+  boruta_params <- list(formula = scenario_indx ~ .-scenario, 
+                        data = data, 
+                        doTrace = 0, 
+                        maxRuns = 100,
+                        getImp=getImp)
+  
+  if (!is.null(model_params)){
+    boruta_params <- c(boruta_params, model_params)
+  }
+    
+
+  boruta_output <- do.call(Boruta, boruta_params)
+                   
+  final_boruta <- TentativeRoughFix(boruta_output)
+  boruta_df <- as.data.frame(attStats(final_boruta))
+  boruta_df <- boruta_df[order(as.vector(rownames(boruta_df))), ]
+  return(list(boruta_df = boruta_df, boruta_output = boruta_output))
+}
+```
+
+```{r}
+extract_results <- function(boruta_dataframes, years) {
+  
+  new_colnames <- rownames(boruta_dataframes[[2015]])
+  new_colnames <- c('year', new_colnames)
+  boruta_scores_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
+  colnames(boruta_scores_df) <- new_colnames
+  boruta_decisions_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
+  colnames(boruta_decisions_df) <- new_colnames
+  
+  i=1
+  for (year in years) {
+    importance <- boruta_dataframes[[year]]$medianImp
+    importance <- c(year, importance)
+    boruta_scores_df[i, ] <- importance
+    decision <- boruta_dataframes[[year]]$decision
+    decision <- c(year, decision)
+    boruta_decisions_df[i, ] <- decision
+    i = i + 1
+  }
+
+write.csv(boruta_decisions_df, "C:/Users/fjejo/Downloads/boruta_decisions_df.csv")
+write.csv(boruta_scores_df, "C:/Users/fjejo/Downloads/boruta_scores_df.csv")
+
+}
+```
+
+Now we can run the full boruta alg. for every year and extract the results. 
+
+## Run Boruta with RF
+
+```{r, fig.width=10, fig.height=8}
+
+boruta_dataframes = list()
+indx = 0
+for (year in years) {
+  
+  cross_section_df <- scaled_cross_sections[[year]]
+
+  boruta_results <- run_boruta(cross_section_df, 'RF')
+  boruta_dataframes[[year]] <- boruta_results$boruta_df
+  boruta_output <- boruta_results$boruta_output
+  
+  if (year%%5==0) {
+    par(mar = c(12, 4, 4, 1) + 1.5)  # Adjust the margin to make room for tick labels
+    plot(boruta_output, cex.axis=.7, las=2, xlab="", main=paste("Variable Importance in cross section (RF)", year))    }
+}
+
+extract_results(boruta_dataframes, years)
+```
+## Tune XGB
+
 # XGB
 
 ## Tune xgboost
@@ -174,93 +262,6 @@ getImpXgboostNormalized <- function(x, y, nrounds = 5, verbose = 0, ...) {
 }
 ```
 
-## Performe Boruta feature selection
-```{r}
-run_boruta <- function(data, model_name, model_params=NULL) {
-  
-  # Set estimator
-  if (model_name == 'RF'){
-    getImp <- getImpRfZ
-  } else if (model_name == 'XGB'){
-    getImp <- getImpXgboost#Normalized
-  } else if (model_name == 'RFe'){
-    getImp <- getImpFerns
-  } else {
-    stop('Model not recognized')
-  }
-  # Set default parameters
-  boruta_params <- list(formula = scenario_indx ~ .-scenario, 
-                        data = data, 
-                        doTrace = 0, 
-                        maxRuns = 100,
-                        getImp=getImp)
-  
-  if (!is.null(model_params)){
-    boruta_params <- c(boruta_params, model_params)
-  }
-    
-
-  boruta_output <- do.call(Boruta, boruta_params)
-                   
-  final_boruta <- TentativeRoughFix(boruta_output)
-  boruta_df <- as.data.frame(attStats(final_boruta))
-  boruta_df <- boruta_df[order(as.vector(rownames(boruta_df))), ]
-  return(list(boruta_df = boruta_df, boruta_output = boruta_output))
-}
-```
-
-```{r}
-extract_results <- function(boruta_dataframes, years) {
-  
-  new_colnames <- rownames(boruta_dataframes[[2015]])
-  new_colnames <- c('year', new_colnames)
-  boruta_scores_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
-  colnames(boruta_scores_df) <- new_colnames
-  boruta_decisions_df <- data.frame(matrix(ncol = length(new_colnames), nrow = length(years)))
-  colnames(boruta_decisions_df) <- new_colnames
-  
-  i=1
-  for (year in years) {
-    importance <- boruta_dataframes[[year]]$medianImp
-    importance <- c(year, importance)
-    boruta_scores_df[i, ] <- importance
-    decision <- boruta_dataframes[[year]]$decision
-    decision <- c(year, decision)
-    boruta_decisions_df[i, ] <- decision
-    i = i + 1
-  }
-
-write.csv(boruta_decisions_df, "C:/Users/fjejo/Downloads/boruta_decisions_df.csv")
-write.csv(boruta_scores_df, "C:/Users/fjejo/Downloads/boruta_scores_df.csv")
-
-}
-```
-
-Now we can run the full boruta alg. for every year and extract the results. 
-
-## Run Boruta with RF
-
-```{r, fig.width=10, fig.height=8}
-
-boruta_dataframes = list()
-indx = 0
-for (year in years) {
-  
-  cross_section_df <- scaled_cross_sections[[year]]
-
-  boruta_results <- run_boruta(cross_section_df, 'RF')
-  boruta_dataframes[[year]] <- boruta_results$boruta_df
-  boruta_output <- boruta_results$boruta_output
-  
-  if (year%%5==0) {
-    par(mar = c(12, 4, 4, 1) + 1.5)  # Adjust the margin to make room for tick labels
-    plot(boruta_output, cex.axis=.7, las=2, xlab="", main=paste("Variable Importance in cross section (RF)", year))    }
-}
-
-extract_results(boruta_dataframes, years)
-```
-## Tune XGB
-
 ```{r, fig.width=10, fig.height=8}
 
 boruta_dataframes = list()
@@ -282,7 +283,7 @@ extract_results(boruta_dataframes, years)
 
 
 ```
-
+## Check performance of features
 
 ```{r}
 library(tidymodels)
@@ -305,16 +306,6 @@ best_params <- tune_xgb(training_data, X_colnames=features,
                         min_child_weight=c(1, 3, 5), 
                         subsample=.7)
 ```
-```{r}
-library(mRMRe)
-
-df <- scaled_cross_sections[[2040]]
-mRMR_features <- mRMR(x=df[, boruta_features], y=df$scenario_indx)
-mRMR_features
-```
-
-
-
 ```{r, warning=FALSE, message=FALSE}
 boruta_features =  c('fdETCCDI..nomask', 'pr..nomask', 'pr..sea_mask', 'tas..land_mask', 'tas..nomask', 'tas..sea_mask', 'txxETCCDI..nomask', 'txxETCCDI..sea_mask')
 nomask_features = c('fdETCCDI..nomask', 'gslETCCDI..nomask', 'pr..nomask', 'tas..nomask', 'txxETCCDI..nomask')
@@ -324,7 +315,7 @@ mrmr_boruta_features = c('tas..sea_mask', 'tas..nomask', 'txxETCCDI..nomask', 't
 maske_names = c('boruta', 'nomask', 'all', 'mRMR')
 feature_selections = c(boruta_features, nomask_features, all_features, mrmr_boruta_features)
 
-df <- scaled_cross_sections[[2040]]
+df <- scaled_cross_sections[[2025]]
 
 accuracy <- list(boruta = numeric(10), 
                  nomask = numeric(10), 
@@ -366,29 +357,4 @@ boxplot(accuracy, names = c("Boruta", "Nomask", "All", "mRMR"), ylab = "Values")
 
 
 
-```{r}
-tune_rf <- function(data, X_colnames, y_colname) {
-  
-  rf_grid <- expand.grid(mtry = c(2, 3, 4), 
-                         nodesize = c(1, 5, 10))
-  
-  rf_control <- trainControl(method = "cv",
-                             number = 5,
-                             verboseIter = TRUE,
-                             returnData = FALSE,
-                             returnResamp = "none",
-                             classProbs = TRUE,
-                             allowParallel = TRUE)
-  
-  rf_train <- train(x = data[, X_colnames],
-                    y = data[[y_colname]], 
-                    trControl = rf_control,
-                    tuneGrid = rf_grid,
-                    method = "rf")
-  
-  rf_model <- rf_train$bestTune
-  
-  return(rf_model)
-}
-```
 
