@@ -1,6 +1,5 @@
-name: /nird/home/johannef/.conda/msc_env
+name: msc_env
 channels:
-  - defaults
   - conda-forge
 dependencies:
   - python=3.11
@@ -16,29 +15,31 @@ dependencies:
   - tqdm
   - numpy
   - dask
+  - ipykernel
   - scipy
 # climate
   - xclim
 # visualization
-  - matplotlib
-  - seaborn
+  - pillow
+  - matplotlib #= 3.8.0
+  - seaborn #= 0.13.2
   - imageio
   - cartopy
   - cmocean
-  - regionmask
+  - regionmask  
 # Statistical analysis and ML
   - pingouin
   - statsmodels
-  - scikit-learn
   - xgboost
   - shap
+  - scikit-learn = 1.3
+  - scikit-learn-intelex
 # pip packages
   - pip
   - pip:
- #   - kxy
-    - BorutaShap
+#    - borutashap
     - tensorflow 
     - keras    
     - torch
-    - mrmr_selection
-prefix: /nird/home/johannef/.conda/msc_env
+prefix: msc_env2
+

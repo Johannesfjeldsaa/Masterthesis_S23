@@ -1,7 +1,7 @@
 '''
 
 '''
-import cmocean
+#import cmocean
 import matplotlib.pyplot as plt 
 import seaborn as sns
 import xarray as xr 
@@ -13,10 +13,11 @@ import math
 from pathlib import Path
 import imageio.v2 as imageio
 import pandas as pd
+import sklearn
 
 
 
-file_handler = Handle_Files(working_dir='/nird/home/johannef/Masterthesis_S23')
+file_handler = Handle_Files()#working_dir='/nird/home/johannef/Masterthesis_S23')
 
 
 def plot_on_map(data, ax=None,
@@ -42,11 +43,11 @@ def plot_on_map(data, ax=None,
     - v_max (float): The maximum value for the colorbar.
     - map_projection (str): The map projection to be used.
     """
-    cmap_dict = {'percipitation': {'abs': cmocean.cm.tempo, 
-                                   'pctg': cmocean.cm.tarn, 
-                                   'anomaly': cmocean.cm.tarn},
+    cmap_dict = {'percipitation': {'abs': plt.cm.cividis, # cmocean.cm.tempo 
+                                   'pctg': plt.cm.cividis, #cmocean.cm.tarn, 
+                                   'anomaly': plt.cm.cividis}, # also tarn
                  'temperature': {'abs': plt.cm.coolwarm, 
-                                 'anomaly': cmocean.cm.balance}}
+                                 'anomaly': plt.cm.seismic}} # cmocean.cm.balance
 
     if cmap is None:
         if percipitation is not False:
@@ -351,7 +352,10 @@ def autolabel(ax, ranks):
                     rank,
                     ha='center', va='bottom', rotation=rotation, color='black')
 
-def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, period=None, save=False, save_folder=None, save_name=None, supress_rank_paste=False):
+def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, period=None, 
+                                save=False, save_folder=None, save_name=None, return_plot_data=False,
+                                include_rank_paste=True, 
+                                fontsize=20, y_label=None):
         
     if period is not None:
         mRMR_scores_for_plotting = mRMR_scores_df[(mRMR_scores_df['year'] >= period[0]) & (mRMR_scores_df['year'] <= period[1])]
@@ -362,7 +366,7 @@ def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, pe
     mRMR_scores_for_plotting['rank'] = mRMR_scores_for_plotting['cumulative_mRMR_score'].rank(ascending=False)
     mRMR_scores_for_plotting['rank'] = mRMR_scores_for_plotting['rank'].astype(int)
     mRMR_scores_for_plotting['var'] = mRMR_scores_for_plotting['var: mask'].str.split(':').str[0]
-    print(mRMR_scores_for_plotting)
+
     # Plot the sum as a barplot with rank
     fig, ax = plt.subplots(figsize=(12, 8))  # Increase the figure size
     if period is not None:
@@ -373,12 +377,14 @@ def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, pe
         stop_year = mRMR_scores_df['year'].iloc[-1]
     
     title = title if title is not None else f'Cumulative {filter_name}-scores {start_year}-{stop_year}'
-    fig.suptitle(title, fontsize=20)
+    fig.suptitle(title, fontsize=fontsize)
     sns.barplot(x=mRMR_scores_for_plotting['var: mask'], y=mRMR_scores_for_plotting['cumulative_mRMR_score'], 
                 hue=mRMR_scores_for_plotting['var'])
+    ax.set_xticks(ax.get_xticks())
     ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha='left')  # Rotate labels 90 degrees to the left
-    ax.set_ylabel('Cumulative mRMR score for var: mask')
-    if supress_rank_paste is False:
+    y_label = y_label if y_label is not None else f'Cumulative {filter_name} for var: mask'
+    ax.set_ylabel(y_label)
+    if include_rank_paste:
         autolabel(ax, mRMR_scores_for_plotting['rank'])
     plt.legend(loc='upper left')
     plt.tight_layout()
@@ -391,6 +397,9 @@ def plot_cumulative_mRMR_scores(mRMR_scores_df, title=None, filter_name=None, pe
         plt.savefig(f'{save_folder}/{save_name}')
     
     plt.show()
+
+    if return_plot_data:
+        return mRMR_scores_for_plotting
 
 def add_note_at_bottom(fig, note):
     fig.text(0.5, 0.02, note, ha='center', fontsize=12)
@@ -481,30 +490,169 @@ def plot_cm(y_test, y_pred, cm_title, best_parameters):
 
     return fig
 
-def plot_performance(classification_summaries, metric):
+def plot_performance(classification_summaries, metric, 
+                     years=None, model_name=None, title=None, 
+                     spread=False, summary_subplot_for_spread=True):
 
+    years = years if years is not None else list(next(iter(classification_summaries.values())).keys()) # get the years from the values of the first feature_comb 
     plot_data = pd.DataFrame(columns=['Year', metric, 'feature_comb_key'])
 
     for feature_comb_key, classification_summary in classification_summaries.items():
-        accuracy_feature_comb = []
+        metric_in_feature_comb = []
         year_list = []
         for year in years:
             if year in classification_summary.keys():
-                accuracy_feature_comb = accuracy_feature_comb + classification_summary[year][metric].tolist()
+                metric_in_feature_comb = metric_in_feature_comb + classification_summary[year][metric].tolist()
                 year_list = year_list + [year for _ in range(len(classification_summary[year][metric].tolist()))]
         
         feature_comp_plot_data = pd.DataFrame({'Year': year_list,
-                                               'accuracy': accuracy_feature_comb, 
-                                               'feature_comb_key': [feature_comb_key for _ in range(len(accuracy_feature_comb))]})
+                                               metric: metric_in_feature_comb, 
+                                               'feature_comb_key': [feature_comb_key for _ in range(len(metric_in_feature_comb))]})
         plot_data = pd.concat([plot_data, feature_comp_plot_data], ignore_index=True)
 
+    if spread:
+        if summary_subplot_for_spread:
+            num_subplots = len(classification_summaries)+1 
+            summary_plot = True
+        else:
+            num_subplots = len(classification_summaries)
+            summary_plot = False
+    else:
+        num_subplots = 1
+        summary_plot = True
+    
+    fig, axs = plt.subplots(1, num_subplots,  figsize=(4*num_subplots, 4), sharey=True)
+    title = title if title is not None else f'{model_name.capitalize()} {metric} development' # generate title if not given
+    fig.suptitle(title, fontsize = 22)  # Add the suptitle
+    axs = axs.flatten() if num_subplots > 1 else [axs]
+    
+    full_palette = ['blue', 'red', 'green', 'purple']
+    for i, ax in enumerate(axs):
+        
+        if i == np.shape(axs)[0]-1 and summary_plot:
+            subset = plot_data
+            palette = full_palette
+            turn_off_legend = False
+        else:
+            subset = plot_data[plot_data['feature_comb_key'] == list(classification_summaries.keys())[i]]
+            palette=[full_palette[i]]
+            turn_off_legend = True
+            
+        ax.set_xlabel('Year')
+        if i == 0:
+            ax.set_ylabel(metric)
+        ax.set_xlim(min(years), max(years))
+        ax.set_ylim(0, 1)
+        x_tick_dist = 5 if spread else 3
+        ax.set_xticks(np.arange(min(years), max(years)+1, x_tick_dist))
+        ax.grid(True)
+        sns.lineplot(
+                data=subset, x='Year', y=metric, 
+                errorbar='sd', 
+                hue='feature_comb_key', 
+                ax=ax, 
+                palette=palette,
+                legend=turn_off_legend,
+            )
+        if i != np.shape(axs)[0]-1:
+            sns.move_legend(ax, loc='lower right', frameon=True, title=None)
 
-    plt.figure(figsize=(10, 6))  # Set the figure size
-    plt.suptitle(f'{metric.capitalize()} development using Random Forest classifier')  # Add the suptitle
-    sns.lineplot(data=plot_data, x='Year', y='accuracy', errorbar='sd', hue='feature_comb_key')
-    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=3)  # Put the legend below the plot
-    plt.xticks(np.arange(min(plot_data['Year']), max(plot_data['Year'])+1, 2))  # Make x-axis tick labels integers
+
+    fig.legend(loc='upper center', bbox_to_anchor=(0.5, 0), ncol=4)  # Put the legend below the plot
+    plt.tight_layout()
     plt.show()
+
+def plot_roc_curve(roc_information, years=None, model_name=None, title=None, 
+                   spread=False, summary_subplot_for_spread=False):
+    """
+    Plots the ROC-curves for the given roc_information. If spread is True, the ROC-curves will be plotted in separate subplots.
+    If summary_subplot_for_spread is True, a summary plot will be added to the end of the subplots. If spread is False,
+    a single plot will be generated. 
+    linestyle documentation: https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html
+
+    Parameters:
+    - roc_information (dict): A dictionary containing the roc-information for each feature_combination.
+    - years (list): A list of years to plot the ROC-curves for. If None, the years from the first feature_combination will be used.
+    - model_name (str): The name of the model to be used in the title. If None, the title will be 'ROC-curves'.
+    - title (str): The title of the plot. If None, the title will be generated.
+    - spread (bool): If True, the ROC-curves will be plotted in separate subplots. If False, a single plot will be generated.
+    - summary_subplot_for_spread (bool): If True, a summary plot will be added to the end of the subplots. If False, no summary plot will be added.
+
+    Returns:
+    - None
+    """
+    
+    years = years if years is not None else list(next(iter(roc_information.values())).keys()) # get the years from the values of the first feature_comb 
+    base_fpr = list(roc_information.values())[0][years[0]]['plot_data']['base_fpr']
+
+    if spread:
+        if summary_subplot_for_spread:
+            num_subplots = len(roc_information)+1 
+            summary_plot = True
+        else:
+            num_subplots = len(roc_information)
+            summary_plot = False
+    else:
+        num_subplots = 1
+        summary_plot = True
+    
+    fig, axs = plt.subplots(1, num_subplots,  figsize=(4*num_subplots, 4), sharey=True)
+    title = title if title is not None else f'{model_name.capitalize()} ROC-curves' # generate title if not given
+    fig.suptitle(title, fontsize = 22)  # Add the suptitle
+    axs = axs.flatten() if num_subplots > 1 else [axs]   
+
+    full_palette = ['blue', 'red', 'green', 'purple']
+
+    for i, ax in enumerate(axs):
+        
+        if i == np.shape(axs)[0]-1 and summary_plot:
+            print('psyce... Not impolemented yet!')
+        else:
+            feature_comb_key = list(roc_information.keys())[i]
+            roc_info = list(roc_information.values())[i]
+            mean_tprs_dict = {year: roc_info[year]['plot_data']['mean_tprs'] for year in years}
+            tprs_upper_dict = {year: roc_info[year]['plot_data']['tprs_upper'] for year in years}
+            tprs_lower_dict = {year: roc_info[year]['plot_data']['tprs_lower'] for year in years}
+            
+        ax.set_xlabel('False Positive Rate')
+        ax.set_ylabel('True Positive Rate')
+        ax.set_xlim(-0.01, 1.01)
+        ax.set_ylim(-0.01, 1.01)
+        
+        alphas = np.linspace(0.1, 0.4, len(years))
+        linestyles_dict = {0: 'solid', 1: 'dashed', 2: (0, (5, 10)), 3: (0, (1, 10))}
+        linestyles = [linestyles_dict[i] for i in range(len(years))]
+        linestyles.reverse()
+               
+        for j, year in enumerate(years):
+            auc = sklearn.metrics.auc(base_fpr, mean_tprs_dict[year])
+            ax.plot(
+                base_fpr, 
+                mean_tprs_dict[year],
+                label=f'{year} (AUC = {auc:.2f})', 
+                color=full_palette[i],
+                linestyle=linestyles[j]
+            )
+            ax.fill_between(
+                base_fpr, 
+                tprs_lower_dict[year], 
+                tprs_upper_dict[year], 
+                color=full_palette[i], 
+                alpha=alphas[j]
+            )
+
+        ax.plot(base_fpr, base_fpr, lw=1, color='black')  # Plot the chance line
+        ax.legend(loc='lower right')
+        
+    labels = ['chance']+list(roc_information.keys())
+    handles = [plt.Line2D([0], [0], color=color, label=label) for color, label in zip(['black']+full_palette, labels)]
+    fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0), ncol=5)  # Put the legend below the plot        
+    
+    plt.tight_layout()
+    plt.show()
+    
+    
+
 
 def plot_cms(confusion_matrices, years=None, feature_comb_keys=None):
     
