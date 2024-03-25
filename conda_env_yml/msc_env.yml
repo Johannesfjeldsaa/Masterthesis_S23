@@ -30,7 +30,6 @@ dependencies:
 # Statistical analysis and ML
   - pingouin
   - statsmodels
-  - xgboost
   - shap
   - scikit-learn = 1.3
   - scikit-learn-intelex
@@ -38,6 +37,7 @@ dependencies:
   - pip
   - pip:
 #    - borutashap
+    - xgboost # must be installed using pip to allow cuda support
     - tensorflow 
     - keras    
     - torch

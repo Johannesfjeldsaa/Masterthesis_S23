@@ -5,7 +5,7 @@ from src.helperfunctions_ML import run_classification_experiment, open_cross_sec
 from src.postproces_classificationresults import summarize_with_df
 
 scaled_cross_sections = open_cross_sections(scaled=True)
-model_name = 'GNB'
+model_name = 'XGB'
 
 
 nomask_features = ['fdETCCDI: nomask', 'gslETCCDI: nomask', 'pr: nomask', 'tas: nomask', 'txxETCCDI: nomask']

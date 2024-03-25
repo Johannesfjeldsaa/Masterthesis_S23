@@ -1,11 +1,11 @@
-import pandas as pd
-import numpy as np
 import pickle
+import os
 
 from src.helperfunctions_ML import run_classification_experiment, open_cross_sections
 from src.postproces_classificationresults import summarize_with_df
 
 scaled_cross_sections = open_cross_sections(scaled=True)
+model_name = 'SVM' # Change this to the model you want to run: 'LR', 'RF', 'GNB', 'XGB', SVM
 
 
 nomask_features = ['fdETCCDI: nomask', 'gslETCCDI: nomask', 'pr: nomask', 'tas: nomask', 'txxETCCDI: nomask']
@@ -20,23 +20,32 @@ feature_combinations = {
     'johannes_supervised_features': johannes_supervised_features
 }
 
-years = list(range(2030, 2040))
+years = list(range(2015, 2051))
 target_summaries, roc_information = run_classification_experiment(
     cross_sections=scaled_cross_sections, 
-    model_name='SVM', 
+    model_name=model_name, 
     feature_combinations=feature_combinations, 
     years=years, 
-    seeds=[int(i) for i in range(2)], 
-    include_ROC_analysis=True, roc_analysis_fq=5,
-    skip_tuning=True
+    seeds=[int(i) for i in range(50)], 
+    param_grid=None, # Use None for default hyperparameter grids
+    search_kwgs=None, # Use None for default search settings
+    skip_tuning=False,
+    include_ROC_analysis=True, 
+    roc_analysis_fq=10
     )
 
-with open('D:/Programmering/msc/Masterthesis_S23-Results/dicts/SVC/target_summaries_SVC.pkl', 'wb') as fp:
+ 
+save_path = f'D:/Programmering/msc/Masterthesis_S23-Results/dicts/{model_name}/'
+if not os.path.exists(save_path):
+    os.makedirs(save_path)
+
+with open('/'.join([save_path, f'target_summaries_{model_name}.pkl']), 'wb') as fp:
     pickle.dump(target_summaries, fp)
 
 classification_summaries = summarize_with_df(target_summaries)
-with open('D:/Programmering/msc/Masterthesis_S23-Results/dicts/SVC/classification_summaries_SVC.pkl', 'wb') as fp:
+with open('/'.join([save_path, f'classification_summaries_{model_name}.pkl']), 'wb') as fp:
     pickle.dump(classification_summaries, fp)
 
-with open('D:/Programmering/msc/Masterthesis_S23-Results/dicts/SVC/roc_information_SVC.pkl', 'wb') as fp:
+with open('/'.join([save_path, f'roc_information_{model_name}.pkl']), 'wb') as fp:
     pickle.dump(roc_information, fp)
+

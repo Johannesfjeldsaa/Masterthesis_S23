@@ -492,22 +492,44 @@ def plot_cm(y_test, y_pred, cm_title, best_parameters):
 
 def plot_performance(classification_summaries, metric, 
                      years=None, model_name=None, title=None, 
-                     spread=False, summary_subplot_for_spread=True):
+                     spread=False, summary_subplot_for_spread=True, 
+                     include_train=False, 
+                     report_performance=False):
 
     years = years if years is not None else list(next(iter(classification_summaries.values())).keys()) # get the years from the values of the first feature_comb 
+    if isinstance(report_performance, list):
+        report_years = report_performance
+    elif report_performance:
+        report_years = [2036, 2037, 2038, 2039, 2040]
+    else:
+        report_years = None
+
+    if report_years is not None:
+        if all(number in years for number in report_years):
+            reported_performances = []
+        else:
+            raise ValueError(f'The years {report_years} must be in the data to report performance')
+
+
     plot_data = pd.DataFrame(columns=['Year', metric, 'feature_comb_key'])
 
     for feature_comb_key, classification_summary in classification_summaries.items():
         metric_in_feature_comb = []
+        metric_in_feature_comb_training = []
         year_list = []
         for year in years:
             if year in classification_summary.keys():
                 metric_in_feature_comb = metric_in_feature_comb + classification_summary[year][metric].tolist()
                 year_list = year_list + [year for _ in range(len(classification_summary[year][metric].tolist()))]
+                if include_train:
+                    metric_in_feature_comb_training = metric_in_feature_comb_training + classification_summary[year][f'training_{metric}'].tolist()
         
         feature_comp_plot_data = pd.DataFrame({'Year': year_list,
                                                metric: metric_in_feature_comb, 
                                                'feature_comb_key': [feature_comb_key for _ in range(len(metric_in_feature_comb))]})
+        if include_train:
+            feature_comp_plot_data[f'training_{metric}'] = metric_in_feature_comb_training
+
         plot_data = pd.concat([plot_data, feature_comp_plot_data], ignore_index=True)
 
     if spread:
@@ -526,6 +548,8 @@ def plot_performance(classification_summaries, metric,
     fig.suptitle(title, fontsize = 22)  # Add the suptitle
     axs = axs.flatten() if num_subplots > 1 else [axs]
     
+    
+
     full_palette = ['blue', 'red', 'green', 'purple']
     for i, ax in enumerate(axs):
         
@@ -537,12 +561,15 @@ def plot_performance(classification_summaries, metric,
             subset = plot_data[plot_data['feature_comb_key'] == list(classification_summaries.keys())[i]]
             palette=[full_palette[i]]
             turn_off_legend = True
+            if report_performance:
+                reported_performance = subset[subset['Year'].isin(report_years)][metric].mean()
+                reported_performances.append(reported_performance)
             
         ax.set_xlabel('Year')
         if i == 0:
             ax.set_ylabel(metric)
         ax.set_xlim(min(years), max(years))
-        ax.set_ylim(0, 1)
+        ax.set_ylim(0, 1.05)
         x_tick_dist = 5 if spread else 3
         ax.set_xticks(np.arange(min(years), max(years)+1, x_tick_dist))
         ax.grid(True)
@@ -554,11 +581,26 @@ def plot_performance(classification_summaries, metric,
                 palette=palette,
                 legend=turn_off_legend,
             )
+        
         if i != np.shape(axs)[0]-1:
             sns.move_legend(ax, loc='lower right', frameon=True, title=None)
 
+        if include_train and i != np.shape(axs)[0]-1:
+             sns.lineplot(
+                data=subset, x='Year', y=f'training_{metric}', 
+                errorbar='sd', 
+                ax=ax, 
+                color='gray',
+                linestyle='dashed'
+                )
 
-    fig.legend(loc='upper center', bbox_to_anchor=(0.5, 0), ncol=4)  # Put the legend below the plot
+    if report_years:
+        labels = ['Training']+[f"{key} ({metric}={performance:.4f})" for key, performance in zip(list(classification_summaries.keys()), reported_performances)]
+    else:
+        labels = ['Training']+list(classification_summaries.keys())
+    handles = [plt.Line2D([0], [0], color=color, label=label, linestyle='dashed' if i == 0 else 'solid') for i, (color, label) in enumerate(zip(['gray']+full_palette, labels))]
+    fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0), ncol=5)  # Put the legend below the plot        
+
     plt.tight_layout()
     plt.show()
 
@@ -629,7 +671,7 @@ def plot_roc_curve(roc_information, years=None, model_name=None, title=None,
             ax.plot(
                 base_fpr, 
                 mean_tprs_dict[year],
-                label=f'{year} (AUC = {auc:.2f})', 
+                label=f'{year} (AUC = {auc:.4f})', 
                 color=full_palette[i],
                 linestyle=linestyles[j]
             )
@@ -651,7 +693,71 @@ def plot_roc_curve(roc_information, years=None, model_name=None, title=None,
     plt.tight_layout()
     plt.show()
     
+
+def exctract_hyperparameter(target_summaries, hyperparameter_name, years):
+    hyperparameter_values = pd.DataFrame(
+        columns=['feature_combination', 'year', hyperparameter_name]
+    )
     
+    for feature_comb_key, target_summary in target_summaries.items():
+        for year in years:
+            model_column = target_summary[year].model
+            hyperparameter_values_year = []
+            for row in model_column:
+                hyperparameter_values_year.append(row[hyperparameter_name])
+            
+            feature_comb_key_list = [feature_comb_key for _ in range(len(hyperparameter_values_year))]
+            year_list = [year for _ in range(len(hyperparameter_values_year))]
+            
+            hyperparameter_values_for_fc_y = pd.DataFrame(
+                {'feature_combination': feature_comb_key_list,
+                 'year': year_list, 
+                 hyperparameter_name: hyperparameter_values_year}
+            )
+
+            hyperparameter_values = pd.concat([hyperparameter_values, hyperparameter_values_for_fc_y], ignore_index=True)
+    
+    return hyperparameter_values
+
+def plot_hyperparameters(target_summaries, model_name, years, param_grid):
+
+    for hyperparameter_name, hyperparameter_grid in param_grid.items():
+        if len(hyperparameter_grid) > 1:        
+            full_palette = ['blue', 'red', 'green', 'purple']
+
+            hyperparameter_values = exctract_hyperparameter(target_summaries, hyperparameter_name, years)
+        
+            fig, axs = plt.subplots(nrows=len(years), ncols=len(target_summaries.keys()), 
+                                    figsize=(12, 8), 
+                                    sharey=True,)
+            fig.suptitle(f'Tune distribution for "{hyperparameter_name}" in {model_name}', fontsize=16)    
+                
+            for row, year in enumerate(years):
+                for col, feature_combination in enumerate(hyperparameter_values.feature_combination.unique()):
+
+                    ax = axs[row, col]
+
+                    hyperparameter_values_year = hyperparameter_values[
+                        (hyperparameter_values.year == year) & 
+                        (hyperparameter_values.feature_combination == feature_combination)
+                    ]
+
+                    sns.countplot(
+                        data=hyperparameter_values_year, 
+                        x=hyperparameter_name, 
+                        ax=ax, 
+                        color=full_palette[col],
+                        order=hyperparameter_grid
+                    )
+                    ax.set_title(f'{feature_combination} ({year})', fontsize=10)
+                    ax.set_ylim(0, 50)
+            
+            labels = list(target_summaries.keys())
+            handles = [plt.Line2D([0], [0], color=color, label=label) for i, (color, label) in enumerate(zip(full_palette, labels))]
+
+            fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0), ncol=5)  # Put the legend below the plot        
+            plt.tight_layout()
+            plt.show()    
 
 
 def plot_cms(confusion_matrices, years=None, feature_comb_keys=None):
@@ -684,3 +790,7 @@ def plot_cms(confusion_matrices, years=None, feature_comb_keys=None):
     
     plt.colorbar(ax.collections[0], cax=cbar_ax, format='%.0f%%')
     plt.show()
+
+# Illustration of the classifiers?
+    # SVC
+    # https://scikit-learn.org/stable/auto_examples/svm/plot_svm_kernels.html#sphx-glr-auto-examples-svm-plot-svm-kernels-py

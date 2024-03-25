@@ -9,11 +9,9 @@ from tqdm import tqdm
 
 import sklearn
 from sklearn.model_selection import train_test_split, RandomizedSearchCV, GridSearchCV
-from sklearn.metrics import precision_recall_fscore_support, accuracy_score, confusion_matrix, roc_curve
-import statistics
+from sklearn.metrics import roc_curve
 
 
-import matplotlib.pyplot as plt
 
 from sklearnex import patch_sklearn
 # https://intel.github.io/scikit-learn-intelex/latest/samples/random_forest_yolanda.html
@@ -47,7 +45,7 @@ def open_cross_sections(scenario_indx_key=None, years=None, scaled=False):
 ### RF ###
 from sklearn.ensemble import RandomForestClassifier
 
-def tune_RF(X_train, y_train, seed, param_grid=None, rand_search_kwgs=None, return_model=False):
+def tune_RF(X_train, y_train, seed, param_grid=None, rand_search_kwgs=None, return_model=False, roc_analysis=False):
     """
     Function to tune Random Forest hyperparameters using RandomizedSearchCV
     
@@ -94,40 +92,54 @@ def tune_RF(X_train, y_train, seed, param_grid=None, rand_search_kwgs=None, retu
 ### SVM ###
 
 from sklearn.svm import SVC
-def tune_SVM(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False):
-    
+def tune_SVM(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=True):
+    """
+    Function to tune Support Vector Machine hyperparameters using RandomizedSearchCV.
+    - https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html
+
+    Parameters:
+    - X_train (pd.DataFrame): The training data
+    - y_train (pd.Series): The training labels
+    - seed (int) The random seed
+    - param_grid (dict): The hyperparameter grid to search over
+    - search_kwgs (dict): The RandomizedSearchCV keyword arguments
+    - return_model (bool): Wether or not to return the best model or the best hyperparameters
+
+    Returns:
+    - SVC: The best model if return_model is True or the best hyperparameters if return_model is False
+    """
     param_grid = param_grid if param_grid is not None else {
         'C': np.logspace(-3, 2, 6),
-        'gamma': np.logspace(-4, 0, 5),
-        'kernel': ['linear'],
-        'degree': [2, 6, 10]
+        'gamma': ['scale', 'auto'],
+        'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
+        'degree': [2, 6, 10], 
         }
-    
-    rand_search_kwgs = search_kwgs if search_kwgs is not None else {
-        'n_iter': 100, # Covers more feature combinations (here 100 out of 4320)
-        'cv': 3, # higher num decreases chance of overfitting 
+    if roc_analysis:
+        param_grid['probability'] = [True]
+
+    grid_search_kwgs = search_kwgs if search_kwgs is not None else {
+        'cv': 10, # higher num decreases chance of overfitting 
         'verbose': 0,
-        'random_state': seed,
-        'n_jobs': -1
+        'scoring': 'accuracy',
     }
 
     svm = SVC(random_state=seed)
-    random_search = RandomizedSearchCV(estimator=svm, 
-                                       param_distributions=param_grid, 
-                                       **rand_search_kwgs)
+    grid_search = GridSearchCV(estimator=svm, 
+                               param_grid=param_grid, 
+                               **grid_search_kwgs)
     
-    random_search.fit(X_train, y_train)
+    grid_search.fit(X_train, y_train)
 
     if return_model:
-        return SVC(**random_search.best_params_)
+        return SVC(**grid_search.best_params_)
     else:
-        return random_search.best_params_
+        return grid_search.best_params_
         
 
 ### GNB ###
 from sklearn.naive_bayes import GaussianNB
 
-def tune_GNB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False):
+def tune_GNB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
     """
     Function to tune Gaussian Naive Bayes hyperparameters using RandomizedSearchCV. 
     - https://scikit-learn.org/stable/modules/generated/sklearn.naive_bayes.GaussianNB.html
@@ -168,16 +180,64 @@ def tune_GNB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_m
 
 
 ### XGB ###
-#from xgboost import XGBClassifier
+import xgboost as xgb
+from xgboost import XGBClassifier
 
-def tune_XGB(X_train, y_train, seed):
-    pass
+
+def tune_XGB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
+    """
+    Function to tune XGBoost hyperparameters using RandomizedSearchCV.
+    - https://xgboost.readthedocs.io/en/latest/parameter.html
+    - https://www.analyticsvidhya.com/blog/2016/03/complete-guide-parameter-tuning-xgboost-with-codes-python/
+
+    Parameters:
+    - X_train (pd.DataFrame): The training data
+    - y_train (pd.Series): The training labels
+    - seed (int) The random seed
+    - param_grid (dict): The hyperparameter grid to search over
+    - search_kwgs (dict): The RandomizedSearchCV keyword arguments
+    - return_model (bool): Wether or not to return the best model or the best hyperparameters
+
+    Returns:
+    - XGBClassifier: The best model if return_model is True or the best hyperparameters if return_model is False
+    """
+    param_grid = param_grid if param_grid is not None else {
+        'learning_rate': [0.01, 0.05, 0.1, 0.2, 0.3],
+        'n_estimators': [int(x) for x in np.linspace(start = 200, stop = 2000, num = 10)],
+        'max_depth':range(3,10,2),
+        'min_child_weight': [1, 2, 3, 4, 5],
+        'gamma': [0.0, 0.1, 0.2, 0.3, 0.4],
+        'subsample': [0.6, 0.7, 0.8, 0.9, 1.0],
+        'colsample_bytree': [0.6, 0.7, 0.8, 0.9, 1.0],
+        'alpha': [1e-5, 1e-2, 0.1, 1, 100],
+        'lambda': [1e-5, 1e-2, 0.1, 1, 100],
+    }
+    search_kwgs = search_kwgs if search_kwgs is not None else {
+        'cv': 10, # higher num decreases chance of overfitting 
+        'verbose': 0,
+        'n_jobs': -1,
+        'scoring': 'accuracy'
+    }
+    xgbc = XGBClassifier(random_state=seed, 
+                        tree_method='hist')
+    random_search = RandomizedSearchCV(
+        xgbc,
+        param_distributions=param_grid,
+        **search_kwgs 
+    )
+
+    random_search.fit(X_train, y_train)
+    if return_model:
+        return XGBClassifier(**random_search.best_params_)
+    else:
+        return random_search.best_params_
+    
 
 ### LR ###
 
 from sklearn.linear_model import LogisticRegression
 
-def tune_LR(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False):
+def tune_LR(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
     
     param_grid = param_grid if param_grid is not None else {
         'solver': ['newton-cg', 'lbfgs', 'liblinear'],
@@ -188,7 +248,8 @@ def tune_LR(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_mo
     grid_search_kwgs = search_kwgs if search_kwgs is not None else {
         'cv': 10, # higher num decreases chance of overfitting 
         'verbose': 0,
-        'n_jobs': -1
+        'n_jobs': -1,
+        'scoring': 'accuracy'
     }
 
     lr = LogisticRegression(random_state=seed, max_iter=1000)
@@ -240,10 +301,14 @@ def run_across_seeds(X, y, seeds, model_name, param_grid, search_kwgs, skip_tuni
     elif model_name == 'GNB':
         tune = tune_GNB
         model = GaussianNB
+    elif model_name == 'XGB':
+        tune = tune_XGB
+        model = XGBClassifier
     else:
         raise ValueError('Model name not recognized')
     
-    target_summaries_per_year_and_feature_comb = pd.DataFrame(columns=['seed', 'y_true', 'y_pred', 'model'], 
+    target_summaries_per_year_and_feature_comb = pd.DataFrame(columns=['seed', 'y_train_true', 'y_train_pred', 
+                                                                       'y_test_true', 'y_test_pred',  'model'], 
                                                               index=range(len(seeds)))
     if include_ROC_analysis:
         roc_summaries_per_year_and_feature_comb = pd.DataFrame(columns=['seed', 'fpr', 'tpr'], 
@@ -263,14 +328,18 @@ def run_across_seeds(X, y, seeds, model_name, param_grid, search_kwgs, skip_tuni
         if skip_tuning:
             best_model = model(random_state=seed)
         else:
-            best_config = tune(X_train, y_train, seed, param_grid, search_kwgs)
+            best_config = tune(X_train, y_train, seed, param_grid, search_kwgs, roc_analysis=include_ROC_analysis)
             best_model = model(**best_config)
         
         best_model.fit(X_train, y_train)
-        
-        y_pred = best_model.predict(X_test)
 
-        target_summaries_per_year_and_feature_comb.loc[indx] = [seed, y_test.to_numpy(dtype=int), y_pred.astype(np.dtype(int)), best_model]
+        y_train_pred = best_model.predict(X_train)
+        y_test_pred = best_model.predict(X_test)
+
+        target_summaries_per_year_and_feature_comb.loc[indx] = [seed, 
+                                                                y_train.to_numpy(dtype=int), y_train_pred.astype(np.dtype(int)),
+                                                                y_test.to_numpy(dtype=int), y_test_pred.astype(np.dtype(int)), 
+                                                                best_model.get_params()]
         if include_ROC_analysis:
             
             probabilities = best_model.predict_proba(X_test)
@@ -303,7 +372,8 @@ def run_across_seeds(X, y, seeds, model_name, param_grid, search_kwgs, skip_tuni
 def run_classification_experiment(cross_sections, model_name, 
                                   feature_combinations, years=None, seeds=None, 
                                   param_grid=None, search_kwgs=None, skip_tuning=False,
-                                  include_ROC_analysis=False, roc_analysis_fq=10):
+                                  include_ROC_analysis=False, roc_analysis_fq=10, 
+                                  ):
     """
     Function to run a classification experiment across multiple years, seeds and feature combinations.
 
