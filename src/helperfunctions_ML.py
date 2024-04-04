@@ -67,11 +67,11 @@ def tune_RF(X_train, y_train, seed, param_grid=None, rand_search_kwgs=None, retu
         'min_samples_split': [2, 5, 10],
         'min_samples_leaf': [1, 2, 4],
         'max_features': ['sqrt', 'log2'],
-        'bootstrap': [True, False]
+        'bootstrap': [True]
     }
     rand_search_kwgs = rand_search_kwgs if rand_search_kwgs is not None else {
-        'n_iter': 100, # Covers more feature combinations (here 100 out of 4320)
-        'cv': 3, # higher num decreases chance of overfitting 
+        'n_iter': 100, # Covers more feature combinations 
+        'cv': 10, # higher num decreases chance of overfitting 
         'verbose': 0,
         'random_state': seed,
         'n_jobs': -1

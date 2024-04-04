@@ -5,7 +5,7 @@ from src.helperfunctions_ML import run_classification_experiment, open_cross_sec
 from src.postproces_classificationresults import summarize_with_df
 
 scaled_cross_sections = open_cross_sections(scaled=True)
-model_name = 'LR' # Change this to the model you want to run: 'LR', 'RF', 'GNB', 'XGB', SVM
+model_name = 'RF' # Change this to the model you want to run: 'LR', 'RF', 'GNB', 'XGB', SVM
 
 
 nomask_features = ['fdETCCDI: nomask', 'gslETCCDI: nomask', 'pr: nomask', 'tas: nomask', 'txxETCCDI: nomask']
