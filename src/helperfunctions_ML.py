@@ -25,14 +25,29 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 ### Data Handling ###
 
-def open_cross_sections(scenario_indx_key=None, years=None, scaled=False):
+def open_cross_sections(scenario_indx_key=None, years=None, scaled=False, directory=None):
+    """
+    Function to open cross-sectional data for multiple years.
+    - If scaled is True the function will open the standardscaled data, otherwise the unscaled data will be opened.
+    - The function will return a dictionary with years as keys and cross-sectional data as values.
+
+    Parameters:
+    - scenario_indx_key (dict): The scenario index key to use for mapping scenarios to integers.
+    - years (list): The years to open data for.
+    - scaled (bool): Wether or not to open the standardscaled data.
+    - directory (str): The directory to open the data from. If None the default directory will be used.
+
+    Returns:
+    - dict: The cross-sectional data for each year. 
+    """
+    directory = directory if directory is not None else 'D:/Programmering/msc/MSc_DataFiles_040424/tables/cross_sections'
     scenario_indx_key = scenario_indx_key if scenario_indx_key is not None else {'ssp126': 0, 'ssp585': 1}
     years = years if years is not None else list(range(2015, 2101))
 
     if scaled:
-        cross_sections = {year: pd.read_csv('/'.join(["D:/Programmering/msc/Masterthesis_S23 DataFiles/standardscaled", f'cross_section_{year}_standscaled.csv'])) for year in years}
+        cross_sections = {year: pd.read_csv('/'.join([directory, 'standardscaled', f'cross_section_{year}_standscaled.csv'])) for year in years}
     else:
-        cross_sections = {year: pd.read_csv('/'.join(['/nird/home/johannef/Masterthesis_S23 DataFiles/tables/cross_sections/unscaled', f'cross_section_{year}.csv'])) for year in years}
+        cross_sections = {year: pd.read_csv('/'.join([directory, 'unscaled', f'cross_section_{year}.csv'])) for year in years}
 
     for year in years:
         cross_section = cross_sections[year]
@@ -42,10 +57,11 @@ def open_cross_sections(scenario_indx_key=None, years=None, scaled=False):
 
     return cross_sections
 
+### Model Tuning ###    
 ### RF ###
 from sklearn.ensemble import RandomForestClassifier
 
-def tune_RF(X_train, y_train, seed, param_grid=None, rand_search_kwgs=None, return_model=False, roc_analysis=False):
+def tune_RF(X_train, y_train, seed, search_alg, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False, ):
     """
     Function to tune Random Forest hyperparameters using RandomizedSearchCV
     
@@ -69,25 +85,41 @@ def tune_RF(X_train, y_train, seed, param_grid=None, rand_search_kwgs=None, retu
         'max_features': ['sqrt', 'log2'],
         'bootstrap': [True]
     }
-    rand_search_kwgs = rand_search_kwgs if rand_search_kwgs is not None else {
-        'n_iter': 100, # Covers more feature combinations 
-        'cv': 10, # higher num decreases chance of overfitting 
-        'verbose': 0,
-        'random_state': seed,
-        'n_jobs': -1
-    }
+
+    
+
 
     rf = RandomForestClassifier(random_state=seed)
-    random_search = RandomizedSearchCV(estimator=rf, 
-                                       param_distributions=param_grid, 
-                                       **rand_search_kwgs)
+
+    if search_alg == 'random':
+        rand_search_kwgs = search_kwgs if search_kwgs is not None else {
+            'n_iter': 100, # Covers more feature combinations 
+            'cv': 10, # higher num decreases chance of overfitting 
+            'verbose': 0,
+            'random_state': seed,
+            'n_jobs': -1,
+            'scoring': 'accuracy',
+        }
+        search = RandomizedSearchCV(estimator=rf, 
+                                    param_distributions=param_grid, 
+                                    **rand_search_kwgs)
+    elif search_alg == 'grid':
+        grid_search_kwgs = search_kwgs if search_kwgs is not None else {
+            'cv': 10, # higher num decreases chance of overfitting 
+            'verbose': 0,
+            'n_jobs': -1,
+            'scoring': 'accuracy',
+        }
+        search = GridSearchCV(estimator=rf, 
+                              param_grid=param_grid, 
+                              **grid_search_kwgs)
     
-    random_search.fit(X_train, y_train)
+    search.fit(X_train, y_train)
 
     if return_model:
-        return RandomForestClassifier(**random_search.best_params_)
+        return RandomForestClassifier(**search.best_params_)
     else:
-        return random_search.best_params_
+        return search.best_params_
 
 ### SVM ###
 
@@ -183,8 +215,7 @@ def tune_GNB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_m
 import xgboost as xgb
 from xgboost import XGBClassifier
 
-
-def tune_XGB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
+def tune_XGB(X_train, y_train, seed, search_alg, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
     """
     Function to tune XGBoost hyperparameters using RandomizedSearchCV.
     - https://xgboost.readthedocs.io/en/latest/parameter.html
@@ -213,6 +244,7 @@ def tune_XGB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_m
         'lambda': [1e-5, 1e-2, 0.1, 1, 100],
     }
     search_kwgs = search_kwgs if search_kwgs is not None else {
+        'n_iter': 100,
         'cv': 10, # higher num decreases chance of overfitting 
         'verbose': 0,
         'n_jobs': -1,
@@ -225,7 +257,6 @@ def tune_XGB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_m
         param_distributions=param_grid,
         **search_kwgs 
     )
-
     random_search.fit(X_train, y_train)
     if return_model:
         return XGBClassifier(**random_search.best_params_)
@@ -237,7 +268,7 @@ def tune_XGB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_m
 
 from sklearn.linear_model import LogisticRegression
 
-def tune_LR(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
+def tune_LR(X_train, y_train, seed, search_alg,  param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
     
     param_grid = param_grid if param_grid is not None else {
         'solver': ['newton-cg', 'lbfgs', 'liblinear'],
@@ -245,6 +276,51 @@ def tune_LR(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_mo
         'C': [100, 10, 1.0, 0.1, 0.01]
         }
 
+
+    lr = LogisticRegression(random_state=seed, max_iter=1000)
+
+    if search_alg == 'random':
+        rand_search_kwgs = search_kwgs if search_kwgs is not None else {
+            'n_iter': 100, # Covers more feature combinations 
+            'cv': 10, # higher num decreases chance of overfitting 
+            'verbose': 0,
+            'random_state': seed,
+            'n_jobs': -1,
+            'scoring': 'accuracy',
+        }
+        search = RandomizedSearchCV(estimator=lr, 
+                                    param_distributions=param_grid, 
+                                    **rand_search_kwgs)
+    elif search_alg == 'grid':
+        grid_search_kwgs = search_kwgs if search_kwgs is not None else {
+            'cv': 10, # higher num decreases chance of overfitting 
+            'verbose': 0,
+            'n_jobs': -1,
+            'scoring': 'accuracy'
+        }
+        search = GridSearchCV(estimator=lr, 
+                              param_grid=param_grid, 
+                              **grid_search_kwgs)
+
+    search.fit(X_train, y_train)
+
+    if return_model:
+        return LogisticRegression(**search.best_params_)
+    else:
+        return search.best_params_
+
+        
+### KNN ###
+from sklearn.neighbors import KNeighborsClassifier
+
+def tune_KNN(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
+
+    param_grid = param_grid if param_grid is not None else {
+        'n_neighbors': [3, 5, 7, 9, 11],
+        'weights': ['uniform', 'distance'],
+        'metric': ['euclidean', 'manhattan', 'minkowski']
+        }
+    
     grid_search_kwgs = search_kwgs if search_kwgs is not None else {
         'cv': 10, # higher num decreases chance of overfitting 
         'verbose': 0,
@@ -252,15 +328,15 @@ def tune_LR(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_mo
         'scoring': 'accuracy'
     }
 
-    lr = LogisticRegression(random_state=seed, max_iter=1000)
-    grid_search = GridSearchCV(estimator=lr, 
-                               param_grid=param_grid, 
-                               **grid_search_kwgs)
+    knn = KNeighborsClassifier()
+    grid_search = GridSearchCV(estimator=knn,
+                                 param_grid=param_grid,
+                                 **grid_search_kwgs)
     
     grid_search.fit(X_train, y_train)
 
     if return_model:
-        return LogisticRegression(**grid_search.best_params_)
+        return KNeighborsClassifier(**grid_search.best_params_)
     else:
         return grid_search.best_params_
 
@@ -268,7 +344,7 @@ def tune_LR(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_mo
 ### Classification Experiment ###
 
 
-def run_across_seeds(X, y, seeds, model_name, param_grid, search_kwgs, skip_tuning=False, include_ROC_analysis=False):
+def run_across_seeds(X, y, seeds, model_name, search_alg, param_grid, search_kwgs, skip_tuning=False, include_ROC_analysis=False):
     """
     Function to run model across multiple seeds and summarize the results. 
     ROC code from (https://stats.stackexchange.com/questions/186337/average-roc-for-repeated-10-fold-cross-validation-with-probability-estimates)
@@ -304,6 +380,9 @@ def run_across_seeds(X, y, seeds, model_name, param_grid, search_kwgs, skip_tuni
     elif model_name == 'XGB':
         tune = tune_XGB
         model = XGBClassifier
+    elif model_name == 'KNN':
+        tune = tune_KNN
+        model = KNeighborsClassifier
     else:
         raise ValueError('Model name not recognized')
     
@@ -328,7 +407,7 @@ def run_across_seeds(X, y, seeds, model_name, param_grid, search_kwgs, skip_tuni
         if skip_tuning:
             best_model = model(random_state=seed)
         else:
-            best_config = tune(X_train, y_train, seed, param_grid, search_kwgs, roc_analysis=include_ROC_analysis)
+            best_config = tune(X_train, y_train, seed, search_alg, param_grid, search_kwgs, roc_analysis=include_ROC_analysis)
             best_model = model(**best_config)
         
         best_model.fit(X_train, y_train)
@@ -372,7 +451,7 @@ def run_across_seeds(X, y, seeds, model_name, param_grid, search_kwgs, skip_tuni
 
 def run_classification_experiment(cross_sections, model_name, 
                                   feature_combinations, years=None, seeds=None, 
-                                  param_grid=None, search_kwgs=None, skip_tuning=False,
+                                  search_alg=None, param_grid=None, search_kwgs=None, skip_tuning=False,
                                   include_ROC_analysis=False, roc_analysis_fq=10, 
                                   ):
     """
@@ -384,6 +463,7 @@ def run_classification_experiment(cross_sections, model_name,
     - feature_combinations (dict): The feature combinations to use for the experiment. Use a dictionary with feature combination keys and feature lists as values.
     - years (list): The years to process, if None all years in cross_sections will be used.
     - seeds (list): The random seeds to use, if None all seeds from 0 to 9 will be used.
+    - search_alg (str): The search algorithm to use for hyperparameter tuning. Options are 'random' and 'grid'
     - param_grid (dict): The hyperparameter grid to search over
     - search_kwgs (dict): The RandomizedSearchCV or GridSearchCV keyword arguments
     - skip_tuning (bool): Wether or not to skip the tuning process
@@ -397,7 +477,7 @@ def run_classification_experiment(cross_sections, model_name,
     
     years = years if years is not None else list(cross_sections.keys())
     seeds = seeds if seeds is not None else list(range(10))
-
+    search_alg = search_alg if search_alg is not None else 'random'
         
     target_summaries = {feature_comb_key: {} for feature_comb_key in feature_combinations.keys()}
     if include_ROC_analysis:
@@ -418,12 +498,12 @@ def run_classification_experiment(cross_sections, model_name,
 
             if include_ROC_analysis and year % roc_analysis_fq == 0:
                 target_summaries[feature_comb_key][year], roc_information[feature_comb_key][year] = run_across_seeds(X, y, seeds, model_name, 
-                                                                                                                     param_grid, search_kwgs, 
+                                                                                                                     search_alg, param_grid, search_kwgs, 
                                                                                                                      skip_tuning,
                                                                                                                      include_ROC_analysis)
             else:
                 target_summaries[feature_comb_key][year] = run_across_seeds(X, y, seeds, model_name,
-                                                                            param_grid, search_kwgs, 
+                                                                            search_alg, param_grid, search_kwgs, 
                                                                             skip_tuning)
 
     if include_ROC_analysis:

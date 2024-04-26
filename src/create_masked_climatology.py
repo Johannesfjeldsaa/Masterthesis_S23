@@ -4,7 +4,7 @@ from src.preproces import *
 import xarray as xr 
 import numpy as np
 
-work_dir = '/nird/home/johannef/Masterthesis_S23'
+work_dir = 'D:/Programmering/msc/Masterthesis_S23'
 
 file_handler = Handle_Files(work_dir)
 preprocesser = Preprocess_Climate_Data(work_dir)

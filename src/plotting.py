@@ -14,6 +14,7 @@ from pathlib import Path
 import imageio.v2 as imageio
 import pandas as pd
 import sklearn
+import cmocean
 
 
 
@@ -31,7 +32,8 @@ def plot_on_map(data, ax=None,
                 percipitation=False, 
                 temperature=False, 
                 include_regionmask=False,
-                map_projection='Robinson'):
+                map_projection='Robinson', 
+                plot_masks=False):
     """
     Parameters:
     - data (xr.DataArray): The data to be plotted. Horizontal 2D data at a single time step.
@@ -43,11 +45,11 @@ def plot_on_map(data, ax=None,
     - v_max (float): The maximum value for the colorbar.
     - map_projection (str): The map projection to be used.
     """
-    cmap_dict = {'percipitation': {'abs': plt.cm.cividis, # cmocean.cm.tempo 
-                                   'pctg': plt.cm.cividis, #cmocean.cm.tarn, 
-                                   'anomaly': plt.cm.cividis}, # also tarn
+    cmap_dict = {'percipitation': {'abs': cmocean.cm.tempo,
+                                   'pctg': cmocean.cm.tarn, 
+                                   'anomaly': cmocean.cm.tarn}, # also tarn
                  'temperature': {'abs': plt.cm.coolwarm, 
-                                 'anomaly': plt.cm.seismic}} # cmocean.cm.balance
+                                 'anomaly': cmocean.cm.balance}} 
 
     if cmap is None:
         if percipitation is not False:
@@ -74,6 +76,9 @@ def plot_on_map(data, ax=None,
                 'vmin': v_min,
                 'vmax': v_max}
 
+    if plot_masks:
+        settings['alpha'] = 0.5
+        
     if migrate_colorbar:
         settings['add_colorbar'] = False
     else:
@@ -94,6 +99,9 @@ def plot_on_map(data, ax=None,
     p.axes.set_global()
     p.axes.coastlines()
 
+    if plot_masks:
+        p.axes.stock_img()
+
     if title is None:
         title = "Map plot"
     if ax is None:
@@ -110,6 +118,16 @@ def legend_without_duplicate_labels(fig):
 
 def plot_annual_global_ensambles(main_data_dir, SSPs, variable, mask_names=None, temporal_range=None, show_fig2=True):
 
+
+    color_map = {'ssp126': '#1c3354', 
+                 'ssp245': '#ebdf4a', 
+                 'ssp370': '#f43030', 
+                 'ssp585': '#8f2035'}
+    label_map = {'ssp126': 'SSP1-2.6', 
+                 'ssp245': 'SSP2-4.5', 
+                 'ssp370': 'SSP3-7.0', 
+                 'ssp585': 'SSP5-8.5'}
+
     if mask_names is None:
         mask_names = file_handler.get_all_filenames_in_dir(main_data_dir)
     
@@ -122,8 +140,6 @@ def plot_annual_global_ensambles(main_data_dir, SSPs, variable, mask_names=None,
     
     fig.suptitle('SSP development')
 
-    colors = plt.cm.coolwarm(np.linspace(0, 1, len(SSPs)))
-    color_map = dict(zip(SSPs, colors))
 
     for i, mask in enumerate(mask_names):
         ax = axs[i]
@@ -147,7 +163,7 @@ def plot_annual_global_ensambles(main_data_dir, SSPs, variable, mask_names=None,
             ens_mean = ens_stats[f'{variable}_mean']
             ens_std = ens_stats[f'{variable}_stdev']
             ax.plot(ens_stats.year, ens_mean, 
-                            label=scenario,
+                            label=label_map[scenario],
                             color=color_map[scenario])
             ax.fill_between(ens_stats.year, ens_mean - ens_std, ens_mean + ens_std, 
                                     color=color_map[scenario],
@@ -494,7 +510,10 @@ def plot_performance(classification_summaries, metric,
                      years=None, model_name=None, title=None, 
                      spread=False, summary_subplot_for_spread=True, 
                      include_train=False, 
-                     report_performance=False):
+                     report_performance=False, 
+                     report_crossing=False,
+                     notitle=False, 
+                     turn_on_subplot_legend=True):
 
     years = years if years is not None else list(next(iter(classification_summaries.values())).keys()) # get the years from the values of the first feature_comb 
     if isinstance(report_performance, list):
@@ -505,11 +524,24 @@ def plot_performance(classification_summaries, metric,
         report_years = None
 
     if report_years is not None:
+        if report_crossing:
+            raise ValueError('Cannot report performance and crossing at the same time')
+        
         if all(number in years for number in report_years):
             reported_performances = []
         else:
             raise ValueError(f'The years {report_years} must be in the data to report performance')
 
+    if isinstance(report_crossing, float):
+        if report_crossing < 0 or report_crossing > 1:
+            raise ValueError('The crossing value must be between 0 and 1')
+        reported_crossings = []
+    elif report_crossing:
+        report_crossing = 0.8
+        reported_crossings = []
+    else:
+        report_crossing = None
+    
 
     plot_data = pd.DataFrame(columns=['Year', metric, 'feature_comb_key'])
 
@@ -544,9 +576,12 @@ def plot_performance(classification_summaries, metric,
         summary_plot = True
     
     fig, axs = plt.subplots(1, num_subplots,  figsize=(4*num_subplots, 4), sharey=True)
-    title = title if title is not None else f'{model_name.capitalize()} {metric} development' # generate title if not given
-    fig.suptitle(title, fontsize = 22)  # Add the suptitle
     axs = axs.flatten() if num_subplots > 1 else [axs]
+
+    if not notitle:
+        title = title if title is not None else f'{model_name.capitalize()} {metric} development' # generate title if not given
+        fig.suptitle(title, fontsize = 22)  # Add the suptitle
+    
     
     
 
@@ -556,15 +591,20 @@ def plot_performance(classification_summaries, metric,
         if i == np.shape(axs)[0]-1 and summary_plot:
             subset = plot_data
             palette = full_palette
-            turn_off_legend = False
+            turn_on_legend = False 
         else:
             subset = plot_data[plot_data['feature_comb_key'] == list(classification_summaries.keys())[i]]
             palette=[full_palette[i]]
-            turn_off_legend = True
+            turn_on_legend = True if turn_on_subplot_legend else False
             if report_performance:
                 reported_performance = subset[subset['Year'].isin(report_years)][metric].mean()
                 reported_performances.append(reported_performance)
-            
+
+            if report_crossing:
+                yearly_mean = subset.groupby('Year')[metric].mean()
+                reported_crossing = yearly_mean.index[np.where(yearly_mean < 0.8)[0][-1]]
+                reported_crossings.append(reported_crossing)
+
         ax.set_xlabel('Year')
         if i == 0:
             ax.set_ylabel(metric)
@@ -579,10 +619,10 @@ def plot_performance(classification_summaries, metric,
                 hue='feature_comb_key', 
                 ax=ax, 
                 palette=palette,
-                legend=turn_off_legend,
+                legend=turn_on_legend,
             )
         
-        if i != np.shape(axs)[0]-1:
+        if i != np.shape(axs)[0]-1 and turn_on_legend:
             sns.move_legend(ax, loc='lower right', frameon=True, title=None)
 
         if include_train and i != np.shape(axs)[0]-1:
@@ -595,7 +635,9 @@ def plot_performance(classification_summaries, metric,
                 )
 
     if report_years:
-        labels = ['Training']+[f"{key} ({metric}={performance:.4f})" for key, performance in zip(list(classification_summaries.keys()), reported_performances)]
+        labels = ['Training']+[f"{key} \n{metric}={performance:.4f}" for key, performance in zip(list(classification_summaries.keys()), reported_performances)]
+    elif report_crossing:
+        labels = ['Training']+[f"{key} \n{metric}>={report_crossing} in {crossing:.0f}" for key, crossing in zip(list(classification_summaries.keys()), reported_crossings)]
     else:
         labels = ['Training']+list(classification_summaries.keys())
     handles = [plt.Line2D([0], [0], color=color, label=label, linestyle='dashed' if i == 0 else 'solid') for i, (color, label) in enumerate(zip(['gray']+full_palette, labels))]
@@ -605,7 +647,7 @@ def plot_performance(classification_summaries, metric,
     plt.show()
 
 def plot_roc_curve(roc_information, years=None, model_name=None, title=None, 
-                   spread=False, summary_subplot_for_spread=False):
+                   spread=False, summary_subplot_for_spread=False , notitle=False,):
     """
     Plots the ROC-curves for the given roc_information. If spread is True, the ROC-curves will be plotted in separate subplots.
     If summary_subplot_for_spread is True, a summary plot will be added to the end of the subplots. If spread is False,
@@ -639,9 +681,11 @@ def plot_roc_curve(roc_information, years=None, model_name=None, title=None,
         summary_plot = True
     
     fig, axs = plt.subplots(1, num_subplots,  figsize=(4*num_subplots, 4), sharey=True)
-    title = title if title is not None else f'{model_name.capitalize()} ROC-curves' # generate title if not given
-    fig.suptitle(title, fontsize = 22)  # Add the suptitle
     axs = axs.flatten() if num_subplots > 1 else [axs]   
+    if not notitle:
+        title = title if title is not None else f'{model_name.capitalize()} ROC-curves' # generate title if not given
+        fig.suptitle(title, fontsize = 22)  # Add the suptitle
+    
 
     full_palette = ['blue', 'red', 'green', 'purple']
 
@@ -741,14 +785,23 @@ def plot_hyperparameters(target_summaries, model_name, years, param_grid):
                         (hyperparameter_values.year == year) & 
                         (hyperparameter_values.feature_combination == feature_combination)
                     ]
-
-                    sns.countplot(
-                        data=hyperparameter_values_year, 
-                        x=hyperparameter_name, 
-                        ax=ax, 
-                        color=full_palette[col],
-                        order=hyperparameter_grid
-                    )
+                    if len(hyperparameter_grid) >= 20:
+                        sns.histplot(
+                            data=hyperparameter_values_year, 
+                            x=hyperparameter_name, 
+                            ax=ax, 
+                            color=full_palette[col],
+                            bins=int(len(hyperparameter_grid/5))
+                        )
+                    else:
+                        sns.countplot(
+                            data=hyperparameter_values_year, 
+                            x=hyperparameter_name, 
+                            ax=ax, 
+                            color=full_palette[col],
+                            order=hyperparameter_grid
+                        )
+                    
                     ax.set_title(f'{feature_combination} ({year})', fontsize=10)
                     ax.set_ylim(0, 50)
             
@@ -759,36 +812,126 @@ def plot_hyperparameters(target_summaries, model_name, years, param_grid):
             plt.tight_layout()
             plt.show()    
 
+from sklearn.metrics import confusion_matrix
+import numpy as np 
+import pandas as pd
 
-def plot_cms(confusion_matrices, years=None, feature_comb_keys=None):
+
+def calc_mean_cm(list_of_cms):
+    cm_list = np.stack(list_of_cms, axis=0)
+    mean_cm = np.mean(cm_list, axis=0)
+    return mean_cm
+
+
+def calculate_cm__featurecomb_year(df):
+    y_train_true = list(df['y_train_true'])
+    y_train_pred = list(df['y_train_pred'])
+    y_test_true = list(df['y_test_true'])
+    y_test_pred = list(df['y_test_pred'])
+
+    cm_list_train = []
+    cm_list_test = []
+    for i in range(len(y_train_true)):
+        seed_cm_train = confusion_matrix(y_train_true[i], y_train_pred[i])
+        cm_list_train.append(seed_cm_train)
+        seed_cm_test = confusion_matrix(y_test_true[i], y_test_pred[i])
+        cm_list_test.append(seed_cm_test)
+
+    return cm_list_train, cm_list_test
+
+def calculate_cm_feature_comb(target_summaries, feature_comb_key, report_performance):
     
-    scenario_indx_key = {'ssp126': 0, 'ssp585': 1}
-
-    included_years = years if years is not None else list(next(iter(confusion_matrices.values())).keys())
-    included_feature_combs = feature_comb_keys if feature_comb_keys is not None else list(confusion_matrices.keys())
-
-    nrows = len(included_years)
-    ncols = len(included_feature_combs)
-
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(5*ncols, 5*nrows), sharey='row')
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7]) 
-    fig.suptitle('Mean confusion matrices across seeds', fontsize=22)
-
-    for row, year in enumerate(included_years):
-        for col, feature_comb_key in enumerate(included_feature_combs):
-            ax = axs[row, col]
-            data = confusion_matrices[feature_comb_key][year]
-            data_df = pd.DataFrame(data)
-            data_str = data_df.map(lambda x: f'{x:.2f}%')            
-            sns.heatmap(data_df, annot=data_str, fmt='', cmap='Blues', ax=ax, vmax=50, vmin=0, cbar=False)
-            ax.set_title(f'{feature_comb_key} ({year})')
+    train = []
+    test = []
+    for year in report_performance:
+        df = target_summaries[feature_comb_key][year]
+        cm_list_train, cm_list_test = calculate_cm__featurecomb_year(df)
+        train = train + cm_list_train
+        test = test + cm_list_test     
     
-            # Set y-axis and x-axis labels using scenario_indx_key
-            ax.set_yticklabels([key for key, value in scenario_indx_key.items()], rotation=45)
-            ax.set_xticklabels([key for key, value in scenario_indx_key.items()], rotation=0)
+    train_cm = calc_mean_cm(train)
+    test_cm = calc_mean_cm(test)
 
+    return train_cm, test_cm
+
+def create_cm_labels(test_cm, train_cm):
+
+    test_group_counts = ['{0:0.2f}'.format(value) for value in test_cm.flatten()]
+    test_group_percentages = ["{:.1%}".format(cell/sum(row)) for row in test_cm for cell in row ]
+    train_group_counts = ['{0:0.2f}'.format(value) for value in train_cm.flatten()]
+    train_group_percentages = ["{:.1%}".format(cell/sum(row)) for row in train_cm for cell in row]
+
+    labels = [f"{v1}, {v2}\n ({v4})" for v1, v2, v3, v4 in zip(test_group_counts, test_group_percentages, 
+                                                                                          train_group_counts, train_group_percentages)]
+    labels = np.asarray(labels).reshape(2,2)
+    return labels
+
+def plot_cms(target_summaries, model_name, feature_comb_keys=None, report_performance=None, title=None, notitle=False):
     
-    plt.colorbar(ax.collections[0], cax=cbar_ax, format='%.0f%%')
+    
+    if report_performance is True:
+        print('TRUEResting')
+        report_performance = list(target_summaries[feature_comb_key].keys())
+    elif type(report_performance) is int:
+        print('INTeresting')
+        report_performance = [report_performance]
+    elif type(report_performance) is list:
+        print('LISTeresting')
+        report_performance = list(report_performance)
+    else:
+        raise ValueError('ELSEteresting')
+    full_palette = ['blue', 'red', 'green', 'purple']
+    scenario_indx_key = {'SSP1-2.6': 0, 'SSP5-8.5': 1}
+    included_feature_combs = feature_comb_keys if feature_comb_keys is not None else list(target_summaries.keys())
+    
+    # Colormaps for the heatmaps
+    custom_cmaps = {
+        'nomask_baseline': plt.colormaps['Blues'],
+        'boruta_RF_features': plt.colormaps['Reds'],
+        'mRMR_f_mut_features': plt.colormaps['Greens'],
+        'supervised_features': plt.colormaps['Purples']
+    }
+
+    num_subplots = len(included_feature_combs)
+    fig, axs = plt.subplots(1, num_subplots,  figsize=(4*num_subplots, 4))
+    axs = axs.flatten() if num_subplots > 1 else [axs]   
+
+    if not notitle:
+        title = title if title is not None else f'{model_name.capitalize()} confusion matrices (average across 2035-2040)' # generate title if not given
+        fig.suptitle(title, fontsize = 22)  # Add the suptitle
+    
+
+    for col, feature_comb_key in enumerate(included_feature_combs):
+        ax = axs[col]
+        train_cm, test_cm  = calculate_cm_feature_comb(target_summaries, feature_comb_key, report_performance)
+        
+        data_df = pd.DataFrame(test_cm)
+        labels = create_cm_labels(test_cm, train_cm)
+
+        sns.heatmap(
+            data_df, # Used for colors
+            annot=labels, #used for data 
+            #annot_kws={'color': 'black'}, 
+            fmt='', 
+            cmap=custom_cmaps[feature_comb_key], 
+            ax=ax, 
+            vmax=10, 
+            vmin=0, 
+            cbar=False
+            )
+    
+        # Set y-axis and x-axis labels using scenario_indx_key
+        ax.set_yticklabels([key for key, value in scenario_indx_key.items()], rotation=45)
+        ax.set_xticklabels([key for key, value in scenario_indx_key.items()], rotation=0)
+        ax.set_xlabel("Predicted scenario")
+        ax.set_ylabel('True scenario')
+
+    full_palette = ['blue', 'red', 'green', 'purple']
+    labels = list(target_summaries.keys())
+    handles = [plt.Line2D([0], [0], color=color, label=label) for i, (color, label) in enumerate(zip(full_palette, labels))]
+
+    fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0), ncol=4)  # Put the legend below the plot        
+    plt.tight_layout()
     plt.show()
 
 # Illustration of the classifiers?
