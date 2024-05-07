@@ -2,11 +2,11 @@ import pickle
 import os
 import numpy as np
 
-from src.helperfunctions_MLcopy  import run_classification_experiment, open_cross_sections
+from src.helperfunctions_ML  import run_classification_experiment, open_cross_sections
 from src.postproces_classificationresults import summarize_with_df
 
 scaled_cross_sections = open_cross_sections(scaled=True)
-model_name = 'RF' # Change this to the model you want to run: 'LR', 'RF', 'GNB', 'XGB', SVM/SVC, 'KNN'
+model_name = 'LR' # Change this to the model you want to run: 'LR', 'RF', 'GNB', 'XGB', SVM/SVC, 'KNN'
 
 
 nomask_features = ['fdETCCDI: nomask', 'gslETCCDI: nomask', 'pr: nomask', 'tas: nomask', 'txxETCCDI: nomask']
@@ -21,14 +21,6 @@ feature_combinations = {
     'johannes_supervised_features': johannes_supervised_features
 }
 
-rf_param_grid = {
-            'n_estimators': [30, 50, 100, 200, 500],
-            'max_depth': [2, 3, 5],
-            'min_samples_leaf': [4, 6, 8, 10, 12, 20],
-            'max_features': ['sqrt', 'log2'],
-            'bootstrap': [True]
-        }
-
 start_year = 2015
 end_year = 2050
 years = list(range(start_year, end_year+1))
@@ -39,7 +31,7 @@ target_summaries, roc_information = run_classification_experiment(
     years=years, 
     seeds=[int(i) for i in range(50)], 
     search_alg='grid', 
-    param_grid=rf_param_grid, # Use None for default hyperparameter grids
+    param_grid=None, # Use None for default hyperparameter grids
     scoring='f1', 
     search_kwgs=None, # Use None for default search settings
     skip_tuning=False,
@@ -47,7 +39,7 @@ target_summaries, roc_information = run_classification_experiment(
     roc_analysis_fq=10
     )
 
- 
+'''
 save_path = f'D:/Programmering/msc/Masterthesis_S23-Results/dicts/{model_name}/'
 if not os.path.exists(save_path):
     os.makedirs(save_path)
@@ -62,3 +54,4 @@ with open('/'.join([save_path, f'classification_summaries_{model_name}_{start_ye
 with open('/'.join([save_path, f'roc_information_{model_name}_{start_year}{end_year}_f1.pkl']), 'wb') as fp:
     pickle.dump(roc_information, fp)
 
+'''

@@ -61,7 +61,7 @@ def run_boruta_shap(cross_sections, model_name, years=None, param_grid=None, ran
             model=model,
             importance_measure='shap',
             classification=True,
-            percentile=80
+            percentile=100
         )
 
         Feature_Selector.fit(

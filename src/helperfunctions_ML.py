@@ -57,294 +57,150 @@ def open_cross_sections(scenario_indx_key=None, years=None, scaled=False, direct
 
     return cross_sections
 
-### Model Tuning ###    
-### RF ###
+### tune functions ###
 from sklearn.ensemble import RandomForestClassifier
-
-def tune_RF(X_train, y_train, seed, search_alg, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False, ):
-    """
-    Function to tune Random Forest hyperparameters using RandomizedSearchCV
-    
-    Parameters:
-    - X_train (pd.DataFrame): The training data
-    - y_train (pd.Series): The training labels
-    - seed (int) The random seed
-    - param_grid (dict): The hyperparameter grid to search over
-    - rand_search_kwgs (dict): The RandomizedSearchCV keyword arguments
-    - return_model (bool): Wether or not to return the best model or the best hyperparameters
-
-    Returns:
-    - RandomForestClassifier: The best model if return_model is True or the best hyperparameters if return_model is False
-    """
-    
-    param_grid = param_grid if param_grid is not None else {
-        'n_estimators': [int(x) for x in np.linspace(start = 200, stop = 2000, num = 10)],
-        'max_depth': [None] + [int(x) for x in np.linspace(10, 110, num = 11)],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf': [1, 2, 4],
-        'max_features': ['sqrt', 'log2'],
-        'bootstrap': [True]
-    }
-
-    
-
-
-    rf = RandomForestClassifier(random_state=seed)
-
-    if search_alg == 'random':
-        rand_search_kwgs = search_kwgs if search_kwgs is not None else {
-            'n_iter': 100, # Covers more feature combinations 
-            'cv': 10, # higher num decreases chance of overfitting 
-            'verbose': 0,
-            'random_state': seed,
-            'n_jobs': -1,
-            'scoring': 'accuracy',
-        }
-        search = RandomizedSearchCV(estimator=rf, 
-                                    param_distributions=param_grid, 
-                                    **rand_search_kwgs)
-    elif search_alg == 'grid':
-        grid_search_kwgs = search_kwgs if search_kwgs is not None else {
-            'cv': 10, # higher num decreases chance of overfitting 
-            'verbose': 0,
-            'n_jobs': -1,
-            'scoring': 'accuracy',
-        }
-        search = GridSearchCV(estimator=rf, 
-                              param_grid=param_grid, 
-                              **grid_search_kwgs)
-    
-    search.fit(X_train, y_train)
-
-    if return_model:
-        return RandomForestClassifier(**search.best_params_)
-    else:
-        return search.best_params_
-
-### SVM ###
-
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
 from sklearn.svm import SVC
-def tune_SVM(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=True):
-    """
-    Function to tune Support Vector Machine hyperparameters using RandomizedSearchCV.
-    - https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html
-
-    Parameters:
-    - X_train (pd.DataFrame): The training data
-    - y_train (pd.Series): The training labels
-    - seed (int) The random seed
-    - param_grid (dict): The hyperparameter grid to search over
-    - search_kwgs (dict): The RandomizedSearchCV keyword arguments
-    - return_model (bool): Wether or not to return the best model or the best hyperparameters
-
-    Returns:
-    - SVC: The best model if return_model is True or the best hyperparameters if return_model is False
-    """
-    param_grid = param_grid if param_grid is not None else {
-        'C': np.logspace(-3, 2, 6),
-        'gamma': ['scale', 'auto'],
-        'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-        'degree': [2, 6, 10], 
-        }
-    if roc_analysis:
-        param_grid['probability'] = [True]
-
-    grid_search_kwgs = search_kwgs if search_kwgs is not None else {
-        'cv': 10, # higher num decreases chance of overfitting 
-        'verbose': 0,
-        'scoring': 'accuracy',
-    }
-
-    svm = SVC(random_state=seed)
-    grid_search = GridSearchCV(estimator=svm, 
-                               param_grid=param_grid, 
-                               **grid_search_kwgs)
-    
-    grid_search.fit(X_train, y_train)
-
-    if return_model:
-        return SVC(**grid_search.best_params_)
-    else:
-        return grid_search.best_params_
-        
-
-### GNB ###
+from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
-
-def tune_GNB(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
-    """
-    Function to tune Gaussian Naive Bayes hyperparameters using RandomizedSearchCV. 
-    - https://scikit-learn.org/stable/modules/generated/sklearn.naive_bayes.GaussianNB.html
-    - https://www.analyticsvidhya.com/blog/2021/01/gaussian-naive-bayes-with-hyperpameter-tuning/ 
-
-    Parameters:
-    - X_train (pd.DataFrame): The training data
-    - y_train (pd.Series): The training labels
-    - seed (int) The random seed
-    - param_grid (dict): The hyperparameter grid to search over
-    - search_kwgs (dict): The RandomizedSearchCV keyword arguments
-    - return_model (bool): Wether or not to return the best model or the best hyperparameters
-
-    Returns:
-    - GaussianNB: The best model if return_model is True or the best hyperparameters if return_model is False
-    """
-    param_grid = param_grid if param_grid is not None else {
-        'var_smoothing': np.logspace(0,-9, num=100)
-        }
-
-    grid_search_kwgs = search_kwgs if search_kwgs is not None else {
-        'cv': 10, # higher num decreases chance of overfitting 
-        'verbose': 0,
-        'n_jobs': -1
-    }
-
-    GNB = GaussianNB()
-    grid_search = GridSearchCV(estimator=GNB, 
-                               param_grid=param_grid, 
-                               **grid_search_kwgs)
-    
-    grid_search.fit(X_train, y_train)
-
-    if return_model:
-        return GaussianNB(**grid_search.best_params_)
-    else:
-        return grid_search.best_params_
-
-
-### XGB ###
 import xgboost as xgb
 from xgboost import XGBClassifier
+from sklearn.neighbors import KNeighborsClassifier
 
-def tune_XGB(X_train, y_train, seed, search_alg, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
+
+def tune(X_train, y_train, model_name, seed, search_alg, param_grid, scoring,  search_kwgs=None, return_model=False, roc_analysis=False):
     """
-    Function to tune XGBoost hyperparameters using RandomizedSearchCV.
+    Function to tune model using cross validation. 
+    resourses:
+    - https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html
+    - https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html
+    - https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html
+    - https://scikit-learn.org/stable/modules/generated/sklearn.naive_bayes.GaussianNB.html
+    - https://www.analyticsvidhya.com/blog/2021/01/gaussian-naive-bayes-with-hyperpameter-tuning/ 
     - https://xgboost.readthedocs.io/en/latest/parameter.html
     - https://www.analyticsvidhya.com/blog/2016/03/complete-guide-parameter-tuning-xgboost-with-codes-python/
+    - https://scikit-learn.org/stable/modules/generated/sklearn.neighbors.KNeighborsClassifier.html
+
 
     Parameters:
     - X_train (pd.DataFrame): The training data
     - y_train (pd.Series): The training labels
-    - seed (int) The random seed
+    - model_name (str): The name of the model to tune. Options are 'RF', 'SVM', 'LR', 'GNB', 'XGB', 'KNN'
+    - seed (int): The random seed
+    - search_alg (str): The search algorithm to use for hyperparameter tuning. Options are 'random' and 'grid'
     - param_grid (dict): The hyperparameter grid to search over
-    - search_kwgs (dict): The RandomizedSearchCV keyword arguments
+    - search_kwgs (dict): The RandomizedSearchCV or GridSearchCV keyword arguments
     - return_model (bool): Wether or not to return the best model or the best hyperparameters
+    - roc_analysis (bool): Wether or not to include ROC analysis. Parameter is only used for SVC as this model dont have the predict_proba method built in.
 
     Returns:
-    - XGBClassifier: The best model if return_model is True or the best hyperparameters if return_model is False
+    - The best model if return_model is True or the best hyperparameters if return_model is False
     """
-    param_grid = param_grid if param_grid is not None else {
-        'learning_rate': [0.01, 0.05, 0.1, 0.2, 0.3],
-        'n_estimators': [int(x) for x in np.linspace(start = 200, stop = 2000, num = 10)],
-        'max_depth':range(3,10,2),
-        'min_child_weight': [1, 2, 3, 4, 5],
-        'gamma': [0.0, 0.1, 0.2, 0.3, 0.4],
-        'subsample': [0.6, 0.7, 0.8, 0.9, 1.0],
-        'colsample_bytree': [0.6, 0.7, 0.8, 0.9, 1.0],
-        'alpha': [1e-5, 1e-2, 0.1, 1, 100],
-        'lambda': [1e-5, 1e-2, 0.1, 1, 100],
-    }
-    search_kwgs = search_kwgs if search_kwgs is not None else {
-        'n_iter': 100,
-        'cv': 10, # higher num decreases chance of overfitting 
-        'verbose': 0,
-        'n_jobs': -1,
-        'scoring': 'accuracy'
-    }
-    xgbc = XGBClassifier(random_state=seed, 
-                        tree_method='hist')
-    random_search = RandomizedSearchCV(
-        xgbc,
-        param_distributions=param_grid,
-        **search_kwgs 
-    )
-    random_search.fit(X_train, y_train)
-    if return_model:
-        return XGBClassifier(**random_search.best_params_)
-    else:
-        return random_search.best_params_
-    
 
-### LR ###
-
-from sklearn.linear_model import LogisticRegression
-
-def tune_LR(X_train, y_train, seed, search_alg,  param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
-    
-    param_grid = param_grid if param_grid is not None else {
-        'solver': ['newton-cg', 'lbfgs', 'liblinear'],
-        'penalty': ['l2'],
-        'C': [100, 10, 1.0, 0.1, 0.01]
+    if model_name == 'RF':
+        model = RandomForestClassifier(random_state=seed)
+        param_grid = param_grid if param_grid is not None else {
+            'n_estimators': [int(x) for x in np.linspace(start = 200, stop = 2000, num = 10)],
+            'max_depth': [None] + [int(x) for x in np.linspace(10, 110, num = 11)],
+            'min_samples_split': [2, 5, 10],
+            'min_samples_leaf': [2, 4, 6],
+            'max_features': ['sqrt', 'log2'],
+            'bootstrap': [True]
         }
 
+    elif model_name == 'DT':
+        model = DecisionTreeClassifier(random_state=seed)
+        param_grid = param_grid if param_grid is not None else {
+            'max_depth': [2, 3, 5, 10, 20],
+            'min_samples_leaf': [2, 5, 10, 15, 20],
+            'criterion': ["gini"]
+            }
 
-    lr = LogisticRegression(random_state=seed, max_iter=1000)
+    elif model_name == 'SVM' or model_name == 'SVC':
+        model = SVC(random_state=seed)
+        param_grid = param_grid if param_grid is not None else {
+            'C': np.logspace(-3, 2, 6),
+            'gamma': ['scale', 'auto'],
+            'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
+            'degree': [2, 6, 10], 
+            }
+        if roc_analysis:
+            param_grid['probability'] = [True]
 
+    elif model_name == 'LR':
+        model = LogisticRegression(random_state=seed)
+        param_grid = param_grid if param_grid is not None else {
+            'solver': ['newton-cg', 'liblinear'],
+            'penalty': ['l2'],
+            'C': [100, 10, 1.0, 0.1, 0.01]
+            }
+    elif model_name == 'GNB':
+        model = GaussianNB()
+        param_grid = param_grid if param_grid is not None else {
+            'var_smoothing': np.logspace(0,-9, num=100)
+            }
+    elif model_name == 'XGB':
+        model = XGBClassifier
+        param_grid = param_grid if param_grid is not None else {
+            'learning_rate': [0.01, 0.05, 0.1, 0.2, 0.3],
+            'n_estimators': [int(x) for x in np.linspace(start = 200, stop = 2000, num = 10)],
+            'max_depth':range(3,10,2),
+            'min_child_weight': [1, 2, 3, 4, 5],
+            'gamma': [0.0, 0.1, 0.2, 0.3, 0.4],
+            'subsample': [0.6, 0.7, 0.8, 0.9, 1.0],
+            'colsample_bytree': [0.6, 0.7, 0.8, 0.9, 1.0],
+            'alpha': [1e-5, 1e-2, 0.1, 1, 100],
+            'lambda': [1e-5, 1e-2, 0.1, 1, 100],
+        }
+    elif model_name == 'KNN':
+        model = KNeighborsClassifier()
+        param_grid = param_grid if param_grid is not None else {
+            'n_neighbors': [3, 5, 7, 9, 11],
+            'weights': ['uniform', 'distance'],
+            'metric': ['euclidean', 'manhattan', 'minkowski']
+            }
+    else:
+        raise ValueError('Model name not recognized')
+    
+
+    estimator = model
     if search_alg == 'random':
-        rand_search_kwgs = search_kwgs if search_kwgs is not None else {
+        search_kwgs = search_kwgs if search_kwgs is not None else {
             'n_iter': 100, # Covers more feature combinations 
             'cv': 10, # higher num decreases chance of overfitting 
             'verbose': 0,
             'random_state': seed,
             'n_jobs': -1,
-            'scoring': 'accuracy',
-        }
-        search = RandomizedSearchCV(estimator=lr, 
+            'scoring': scoring,
+            }
+        search = RandomizedSearchCV(estimator=estimator, 
                                     param_distributions=param_grid, 
-                                    **rand_search_kwgs)
+                                    **search_kwgs)
     elif search_alg == 'grid':
-        grid_search_kwgs = search_kwgs if search_kwgs is not None else {
+        search_kwgs = search_kwgs if search_kwgs is not None else {
             'cv': 10, # higher num decreases chance of overfitting 
             'verbose': 0,
             'n_jobs': -1,
-            'scoring': 'accuracy'
-        }
-        search = GridSearchCV(estimator=lr, 
-                              param_grid=param_grid, 
-                              **grid_search_kwgs)
+            'scoring': scoring
+            }
+        search = GridSearchCV(estimator=estimator,
+                              param_grid=param_grid,
+                              **search_kwgs)
+    else:
+        raise ValueError('Search algorithm not recognized')
 
     search.fit(X_train, y_train)
 
     if return_model:
-        return LogisticRegression(**search.best_params_)
+        return model(**search.best_params_)
     else:
         return search.best_params_
-
-        
-### KNN ###
-from sklearn.neighbors import KNeighborsClassifier
-
-def tune_KNN(X_train, y_train, seed, param_grid=None, search_kwgs=None, return_model=False, roc_analysis=False):
-
-    param_grid = param_grid if param_grid is not None else {
-        'n_neighbors': [3, 5, 7, 9, 11],
-        'weights': ['uniform', 'distance'],
-        'metric': ['euclidean', 'manhattan', 'minkowski']
-        }
     
-    grid_search_kwgs = search_kwgs if search_kwgs is not None else {
-        'cv': 10, # higher num decreases chance of overfitting 
-        'verbose': 0,
-        'n_jobs': -1,
-        'scoring': 'accuracy'
-    }
-
-    knn = KNeighborsClassifier()
-    grid_search = GridSearchCV(estimator=knn,
-                                 param_grid=param_grid,
-                                 **grid_search_kwgs)
-    
-    grid_search.fit(X_train, y_train)
-
-    if return_model:
-        return KNeighborsClassifier(**grid_search.best_params_)
-    else:
-        return grid_search.best_params_
-
 
 ### Classification Experiment ###
 
-
-def run_across_seeds(X, y, seeds, model_name, search_alg, param_grid, search_kwgs, skip_tuning=False, include_ROC_analysis=False):
+def run_across_seeds(X, y, seeds, model_name, search_alg, param_grid, scoring, search_kwgs, skip_tuning=False, include_ROC_analysis=False):
     """
     Function to run model across multiple seeds and summarize the results. 
     ROC code from (https://stats.stackexchange.com/questions/186337/average-roc-for-repeated-10-fold-cross-validation-with-probability-estimates)
@@ -366,23 +222,19 @@ def run_across_seeds(X, y, seeds, model_name, search_alg, param_grid, search_kwg
                                       And interped data to enable plotting the mean roc curve across seeds.
     """
     if model_name == 'RF':
-        tune = tune_RF
         model = RandomForestClassifier
     elif model_name == 'SVM' or model_name == 'SVC':
-        tune = tune_SVM
         model = SVC
     elif model_name == 'LR':
-        tune = tune_LR
         model = LogisticRegression
     elif model_name == 'GNB':
-        tune = tune_GNB
         model = GaussianNB
     elif model_name == 'XGB':
-        tune = tune_XGB
         model = XGBClassifier
     elif model_name == 'KNN':
-        tune = tune_KNN
         model = KNeighborsClassifier
+    elif model_name == 'DT':
+        model = DecisionTreeClassifier
     else:
         raise ValueError('Model name not recognized')
     
@@ -407,7 +259,7 @@ def run_across_seeds(X, y, seeds, model_name, search_alg, param_grid, search_kwg
         if skip_tuning:
             best_model = model(random_state=seed)
         else:
-            best_config = tune(X_train, y_train, seed, search_alg, param_grid, search_kwgs, roc_analysis=include_ROC_analysis)
+            best_config = tune(X_train, y_train, model_name, seed, search_alg, param_grid, scoring, search_kwgs, roc_analysis=include_ROC_analysis)
             best_model = model(**best_config)
         
         best_model.fit(X_train, y_train)
@@ -451,7 +303,7 @@ def run_across_seeds(X, y, seeds, model_name, search_alg, param_grid, search_kwg
 
 def run_classification_experiment(cross_sections, model_name, 
                                   feature_combinations, years=None, seeds=None, 
-                                  search_alg=None, param_grid=None, search_kwgs=None, skip_tuning=False,
+                                  search_alg=None, param_grid=None, scoring=None, search_kwgs=None, skip_tuning=False,
                                   include_ROC_analysis=False, roc_analysis_fq=10, 
                                   ):
     """
@@ -478,6 +330,8 @@ def run_classification_experiment(cross_sections, model_name,
     years = years if years is not None else list(cross_sections.keys())
     seeds = seeds if seeds is not None else list(range(10))
     search_alg = search_alg if search_alg is not None else 'random'
+    scoring = scoring if scoring is not None else 'accuracy'
+
         
     target_summaries = {feature_comb_key: {} for feature_comb_key in feature_combinations.keys()}
     if include_ROC_analysis:
@@ -498,12 +352,12 @@ def run_classification_experiment(cross_sections, model_name,
 
             if include_ROC_analysis and year % roc_analysis_fq == 0:
                 target_summaries[feature_comb_key][year], roc_information[feature_comb_key][year] = run_across_seeds(X, y, seeds, model_name, 
-                                                                                                                     search_alg, param_grid, search_kwgs, 
+                                                                                                                     search_alg, param_grid, scoring, search_kwgs, 
                                                                                                                      skip_tuning,
                                                                                                                      include_ROC_analysis)
             else:
                 target_summaries[feature_comb_key][year] = run_across_seeds(X, y, seeds, model_name,
-                                                                            search_alg, param_grid, search_kwgs, 
+                                                                            search_alg, param_grid, scoring, search_kwgs, 
                                                                             skip_tuning)
 
     if include_ROC_analysis:
