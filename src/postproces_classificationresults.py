@@ -8,7 +8,8 @@ from tqdm import tqdm
 # Helper function for summary functions
 def summarize_classification_and_add_dfrow(y_train_true, y_train_pred, 
                                            y_test_true, y_test_pred, 
-                                           indx, seed, df_summaryallseeds):
+                                           indx, seed, df_summaryallseeds, 
+                                           multi_class):
     """
     Function to summarize a singel classification results and add a row to the summary dataframe.
 
@@ -26,12 +27,14 @@ def summarize_classification_and_add_dfrow(y_train_true, y_train_pred,
     summary_dict = {'seed': seed}
     summary_dict['accuracy'] = accuracy_score(y_true=y_test_true, y_pred=y_test_pred)
     summary_dict['error'] = 1 - summary_dict['accuracy']
-    summary_dict['precision'], summary_dict['recall'], summary_dict['f1-score'], _ = precision_recall_fscore_support(y_true=y_test_true, y_pred=y_test_pred, average='binary', zero_division=np.nan)
+    if multi_class == False:
+        summary_dict['precision'], summary_dict['recall'], summary_dict['f1-score'], _ = precision_recall_fscore_support(y_true=y_test_true, y_pred=y_test_pred, average='binary', zero_division=np.nan)
     summary_dict['support'] = len(y_test_true)
 
     summary_dict['training_accuracy'] = accuracy_score(y_true=y_train_true, y_pred=y_train_pred)
     summary_dict['training_error'] = 1 - summary_dict['training_accuracy']
-    summary_dict['training_precision'], summary_dict['training_recall'], summary_dict['training_f1-score'], _ = precision_recall_fscore_support(y_true=y_train_true, y_pred=y_train_pred, average='binary', zero_division=np.nan)
+    if multi_class == False:
+        summary_dict['training_precision'], summary_dict['training_recall'], summary_dict['training_f1-score'], _ = precision_recall_fscore_support(y_true=y_train_true, y_pred=y_train_pred, average='binary', zero_division=np.nan)
     summary_dict['training_support'] = len(y_train_true)
     
     for key, value in summary_dict.items():
@@ -43,7 +46,7 @@ def summarize_classification_and_add_dfrow(y_train_true, y_train_pred,
     
     return df_summaryallseeds
 
-def summarize_across_seeds(target_summaries_per_year_and_feature_comb):
+def summarize_across_seeds(target_summaries_per_year_and_feature_comb, multi_class):
     """
     Function to summarize classification results across multiple seeds but for a single feature combination and year.
 
@@ -56,11 +59,17 @@ def summarize_across_seeds(target_summaries_per_year_and_feature_comb):
     Returns:
     - pd.DataFrame: The classification summary for the feature combination and year
     """
+
     seeds = target_summaries_per_year_and_feature_comb['seed'].to_list()
     df_summaryallseeds = pd.DataFrame(columns=['seed', 
                                                'accuracy', 'error', 'precision', 'recall', 'f1-score', 'support',
                                                'training_accuracy', 'training_error', 'training_precision', 'training_recall', 'training_f1-score', 'training_support'], 
                                       index=range(len(seeds)))
+    if multi_class:
+        df_summaryallseeds = pd.DataFrame(columns=['seed', 
+                                                   'accuracy', 'error', 'support',
+                                                   'training_accuracy', 'training_error', 'training_support'], 
+                                          index=range(len(seeds)))
     
     for indx, seed in tqdm(enumerate(seeds), desc="Processing seeds", colour='green', leave=False):
         y_train_true = target_summaries_per_year_and_feature_comb['y_train_true'].loc[indx]
@@ -72,13 +81,14 @@ def summarize_across_seeds(target_summaries_per_year_and_feature_comb):
         
         df_summaryallseeds = summarize_classification_and_add_dfrow(y_train_true, y_train_pred, 
                                                                     y_test_true, y_test_pred, 
-                                                                    indx, seed, df_summaryallseeds)
+                                                                    indx, seed, df_summaryallseeds, 
+                                                                    multi_class=multi_class)
     
     return df_summaryallseeds
 
 
 
-def summarize_with_df(target_summaries):
+def summarize_with_df(target_summaries, multi_class=False):
     """
     Function to summarize classification results across multiple seeds, feature combinations and years.
 
@@ -94,7 +104,7 @@ def summarize_with_df(target_summaries):
     for feature_comb_key, feature_comb in target_summaries.items():
         classification_summaries[feature_comb_key] = {}
         for year, target_summaries_per_year_and_feature_comb in feature_comb.items():
-            classification_summaries[feature_comb_key][year] = summarize_across_seeds(target_summaries_per_year_and_feature_comb)
+            classification_summaries[feature_comb_key][year] = summarize_across_seeds(target_summaries_per_year_and_feature_comb, multi_class=multi_class)
     
     return classification_summaries
 

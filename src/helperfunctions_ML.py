@@ -349,7 +349,7 @@ def run_classification_experiment(cross_sections, model_name,
             
             X = cross_section_df[feature_comb]
             y = cross_section_df['scenario_indx']
-
+            print(y)
             if include_ROC_analysis and year % roc_analysis_fq == 0:
                 target_summaries[feature_comb_key][year], roc_information[feature_comb_key][year] = run_across_seeds(X, y, seeds, model_name, 
                                                                                                                      search_alg, param_grid, scoring, search_kwgs, 
