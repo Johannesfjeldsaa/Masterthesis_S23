@@ -21,6 +21,8 @@ feature_combinations = {
     'johannes_supervised_features': johannes_supervised_features
 }
 
+feature_combinations = {'gsat': ['tas: nomask']}
+
 start_year = 2015
 end_year = 2050
 years = list(range(start_year, end_year+1))
@@ -39,19 +41,17 @@ target_summaries, roc_information = run_classification_experiment(
     roc_analysis_fq=10
     )
 
-'''
+
 save_path = f'D:/Programmering/msc/Masterthesis_S23-Results/dicts/{model_name}/'
 if not os.path.exists(save_path):
     os.makedirs(save_path)
 
-with open('/'.join([save_path, f'target_summaries_{model_name}_{start_year}{end_year}_f1.pkl']), 'wb') as fp:
+with open('/'.join([save_path, f'target_summaries_{model_name}_GSAT{start_year}{end_year}_f1.pkl']), 'wb') as fp:
     pickle.dump(target_summaries, fp)
 
 classification_summaries = summarize_with_df(target_summaries)
-with open('/'.join([save_path, f'classification_summaries_{model_name}_{start_year}{end_year}_f1.pkl']), 'wb') as fp:
+with open('/'.join([save_path, f'classification_summaries_{model_name}_GSAT{start_year}{end_year}_f1.pkl']), 'wb') as fp:
     pickle.dump(classification_summaries, fp)
 
-with open('/'.join([save_path, f'roc_information_{model_name}_{start_year}{end_year}_f1.pkl']), 'wb') as fp:
+with open('/'.join([save_path, f'roc_information_{model_name}_GSAT{start_year}{end_year}_f1.pkl']), 'wb') as fp:
     pickle.dump(roc_information, fp)
-
-'''
