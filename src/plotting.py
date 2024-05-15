@@ -109,7 +109,7 @@ def plot_on_map(data, ax=None,
 
         plt.show()
     else:
-        ax.set_title(title)
+        ax.set_title(title, fontsize=14)
 
 def legend_without_duplicate_labels(fig):
     handles, labels = fig.axes[0].get_legend_handles_labels()
@@ -641,7 +641,7 @@ def plot_performance(classification_summaries, metric,
     else:
         labels = ['Training']+list(classification_summaries.keys())
     handles = [plt.Line2D([0], [0], color=color, label=label, linestyle='dashed' if i == 0 else 'solid') for i, (color, label) in enumerate(zip(['gray']+full_palette, labels))]
-    fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0), ncol=5)  # Put the legend below the plot        
+    fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0), ncol=5, fontsize=14)  # Put the legend below the plot        
 
     plt.tight_layout()
     plt.show()
