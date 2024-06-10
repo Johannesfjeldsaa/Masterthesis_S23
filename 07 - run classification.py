@@ -5,11 +5,12 @@ import numpy as np
 from src.helperfunctions_ML  import run_classification_experiment, open_cross_sections
 from src.postproces_classificationresults import summarize_with_df
 
-scaled_cross_sections = open_cross_sections(scaled=True)
+scenario_index_key = {'ssp370': 0, 'ssp585': 1}
+scaled_cross_sections = open_cross_sections(scenario_index_key, scaled=True, )
 model_name = 'LR' # Change this to the model you want to run: 'LR', 'RF', 'GNB', 'XGB', SVM/SVC, 'KNN'
 
 
-nomask_features = ['fdETCCDI: nomask', 'gslETCCDI: nomask', 'pr: nomask', 'tas: nomask', 'txxETCCDI: nomask']
+nomask_features = ['fdETCCDI: nomask', 'gslETCCDI: nomask', 'pr: nomask', 'tas: nomask', 'txxETCCDI: nomask', 'rx5dayETCCDI: nomask']
 boruta_RF_features = ['pr: nomask', 'pr: sea_mask', 'tas: land_mask', 'tas: nomask', 'tas: sea_mask', 'txxETCCDI: land_mask', 'txxETCCDI: nomask', 'txxETCCDI: sea_mask']
 mRMR_f_mut_features = ['fdETCCDI: nomask', 'gslETCCDI: nomask', 'tas: land_mask', 'tas: nomask', 'tas: sea_mask', 'txxETCCDI: land_mask', 'txxETCCDI: lat_mask_pm30deg', 'txxETCCDI: nomask', 'txxETCCDI: sea_mask', 'txxETCCDI: sea_mask_pm30deg']
 johannes_supervised_features = ['fdETCCDI: nomask', 'pr: nomask', 'pr: sea_mask', 'rx5dayETCCDI: land_mask', 'tas: nomask', 'txxETCCDI: sea_mask']
@@ -21,7 +22,6 @@ feature_combinations = {
     'johannes_supervised_features': johannes_supervised_features
 }
 
-feature_combinations = {'gsat': ['tas: nomask']}
 
 start_year = 2015
 end_year = 2050
@@ -42,16 +42,16 @@ target_summaries, roc_information = run_classification_experiment(
     )
 
 
-save_path = f'D:/Programmering/msc/Masterthesis_S23-Results/dicts/{model_name}/'
+save_path = f'D:/Programmering/msc/Masterthesis_S23-Results/dicts/370V585/{model_name}/'
 if not os.path.exists(save_path):
     os.makedirs(save_path)
 
-with open('/'.join([save_path, f'target_summaries_{model_name}_GSAT{start_year}{end_year}_f1.pkl']), 'wb') as fp:
+with open('/'.join([save_path, f'target_summaries_{model_name}_370v585_f1.pkl']), 'wb') as fp:
     pickle.dump(target_summaries, fp)
 
 classification_summaries = summarize_with_df(target_summaries)
-with open('/'.join([save_path, f'classification_summaries_{model_name}_GSAT{start_year}{end_year}_f1.pkl']), 'wb') as fp:
+with open('/'.join([save_path, f'classification_summaries_{model_name}_370v585_f1.pkl']), 'wb') as fp:
     pickle.dump(classification_summaries, fp)
 
-with open('/'.join([save_path, f'roc_information_{model_name}_GSAT{start_year}{end_year}_f1.pkl']), 'wb') as fp:
+with open('/'.join([save_path, f'roc_information_{model_name}_370v585_f1.pkl']), 'wb') as fp:
     pickle.dump(roc_information, fp)
