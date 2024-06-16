@@ -5,7 +5,7 @@ import numpy as np
 from src.helperfunctions_ML  import run_classification_experiment, open_cross_sections
 from src.postproces_classificationresults import summarize_with_df
 
-scenario_index_key = {'ssp370': 0, 'ssp585': 1}
+scenario_index_key = {'ssp126': 0, 'ssp585': 1}
 scaled_cross_sections = open_cross_sections(scenario_index_key, scaled=True, )
 model_name = 'LR' # Change this to the model you want to run: 'LR', 'RF', 'GNB', 'XGB', SVM/SVC, 'KNN'
 
@@ -42,16 +42,16 @@ target_summaries, roc_information = run_classification_experiment(
     )
 
 
-save_path = f'D:/Programmering/msc/Masterthesis_S23-Results/dicts/370V585/{model_name}/'
+save_path = f'D:/Programmering/msc/Masterthesis_S23-Results/dicts/126V585/{model_name}/'
 if not os.path.exists(save_path):
     os.makedirs(save_path)
 
-with open('/'.join([save_path, f'target_summaries_{model_name}_370v585_f1.pkl']), 'wb') as fp:
+with open('/'.join([save_path, f'target_summaries_{model_name}_126v585_f1.pkl']), 'wb') as fp:
     pickle.dump(target_summaries, fp)
 
 classification_summaries = summarize_with_df(target_summaries)
-with open('/'.join([save_path, f'classification_summaries_{model_name}_370v585_f1.pkl']), 'wb') as fp:
+with open('/'.join([save_path, f'classification_summaries_{model_name}_126v585_f1.pkl']), 'wb') as fp:
     pickle.dump(classification_summaries, fp)
 
-with open('/'.join([save_path, f'roc_information_{model_name}_370v585_f1.pkl']), 'wb') as fp:
+with open('/'.join([save_path, f'roc_information_{model_name}_126v585_f1.pkl']), 'wb') as fp:
     pickle.dump(roc_information, fp)
